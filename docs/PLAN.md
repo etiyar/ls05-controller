@@ -35,7 +35,7 @@ Durum özeti: Kendi Android uygulamamız Haylou uygulaması olmadan saate bağla
 ### 1.3 Bilinmeyenler
 
 - `55FF/33F1` doğrulamadan sonra komut kabul eder mi (önemsiz, merak konusu)
-- Saat telefona bağlı değilken yayın yapıyor mu, adresi sabit mi (kayıp saat ve gözlem ağı için kritik)
+- Saat telefona bağlı değilken yayın yapıyor mu, adresi sabit mi (bağlantı koptuktan sonra radarın çalışması için kritik)
 - Sağlık geçmişi biçimleri (adım, uyku, SpO2)
 - Kadran dosya biçimi ve yükleme akışının bu modelde çalışıp çalışmadığı
 - Firmware: tam çip modeli, güvenli önyükleme, imza, çift bank, UART noktaları
