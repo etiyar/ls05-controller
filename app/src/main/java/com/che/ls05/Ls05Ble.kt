@@ -52,10 +52,12 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     private class Channel(val name: String, val write: BluetoothGattCharacteristic)
 
     /**
-     * Gate testi kararı: yalnızca A (55FF/33F1) denenir. B'ye (60FF/6001) otomatik geçiş KAPALI.
-     * A yanıt vermezse bağlantı, CCCD ve yetkilendirme incelenir; B ancak ayrı bir kararla açılır.
+     * Gate testi 2 kararı (build-5 logu): A (55FF/33F1) pil sorgusuna yanıt vermedi.
+     * 33F1 yalnızca WRITE destekliyor, oysa kayıttaki komutlar Write Command (0x52) idi;
+     * handle 0x22/0x24 ve saatin 6002'den kendiliğinden veri göndermesi B'yi gösteriyor.
+     * Bu testte YALNIZCA B (60FF/6001 -> 6002) denenir. Otomatik kanal değiştirme yok.
      */
-    private val autoFallbackToB = false
+    private val probeOnly = "B "
 
     private var candidates: List<Channel> = emptyList()
     private var active: Channel? = null
@@ -294,18 +296,18 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         if (active != null) return
         if (probeIndex < 0) {
             val all = candidates
-            candidates = if (autoFallbackToB) all else all.filter { it.name.startsWith("A ") }
-            log("Yoklama planı: ${candidates.joinToString { it.name }.ifEmpty { "YOK" }} (B'ye otomatik geçiş ${if (autoFallbackToB) "AÇIK" else "KAPALI"})")
+            candidates = all.filter { it.name.startsWith(probeOnly) }
+            log("Yoklama planı: ${candidates.joinToString { it.name }.ifEmpty { "YOK" }} (yalnızca bu kanal, otomatik geçiş yok)")
             if (candidates.isEmpty()) {
-                status("A kanalı (55FF/33F1) yok")
-                log("A kanalı bulunamadı; hiçbir komut yazılmadı. GATT haritasını gönder.")
+                status("Kanal ${probeOnly.trim()} yok")
+                log("Kanal bulunamadı; hiçbir komut yazılmadı. GATT haritasını gönder.")
                 return
             }
         }
         probeIndex++
         if (probeIndex >= candidates.size) {
-            status("A kanalı yanıt vermedi")
-            log("SONUÇ: A (55FF/33F1) pil sorgusuna yanıt vermedi. B denenmedi (kapalı). Eşleştirmeyi SİLME. Logu gönder: sıradaki adım bağlantı, CCCD ve yetkilendirme incelemesi.")
+            status("Kanal ${probeOnly.trim()} yanıt vermedi")
+            log("SONUÇ: ${candidates.joinToString { it.name }} pil sorgusuna yanıt vermedi. Eşleştirmeyi SİLME. Logu gönder: sıradaki adım el sıkışma incelemesi.")
             return
         }
         val c = candidates[probeIndex]

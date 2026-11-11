@@ -99,7 +99,7 @@ class MainActivity : Activity(), Ls05Ble.Listener {
         }
 
         root.addView(TextView(this).apply {
-            text = "LS05 Controller v0.1"
+            text = "LS05 Controller v0.1 (gate 2: kanal B)"
             textSize = 22f
             setTypeface(typeface, Typeface.BOLD)
         })
@@ -112,7 +112,16 @@ class MainActivity : Activity(), Ls05Ble.Listener {
         root.addView(statusView)
 
         root.addView(row(
-            button("Tara") { if (hasPermissions()) ble.startScan() else requestBlePermissions() },
+            button("Tara") {
+                if (!hasPermissions()) {
+                    requestBlePermissions()
+                } else if (ble.isConnected) {
+                    log("Zaten bağlı. Yeni tarama için önce bağlantıyı kes.")
+                } else {
+                    deviceList.removeAllViews()
+                    ble.startScan()
+                }
+            },
             button("Bağlantıyı kes") { ble.disconnect() },
         ))
 
