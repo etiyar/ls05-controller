@@ -1,8 +1,26 @@
-# LS05 Controller v0.1
+# LS05 Controller
 
-Haylou Solar LS05 için bağımsız Android test uygulaması. Tek amacı, Haylou uygulaması olmadan saate bağlanıp konuşabildiğimizi kanıtlamak.
+Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, üreticinin sunmadığı özelliklerle kullanmak için kişisel Android uygulaması. Saat artık resmi güncelleme almıyor; bu proje onun yerine geçiyor.
 
-Teknik kaynak: `Haylou_LS05_Ajan_Devir_Notu_v4.md`.
+## Asıl hedefler
+
+| Hedef | Nasıl | Aşama |
+| --- | --- | --- |
+| Haylou uygulaması olmadan kullanım, bulut ve hesap yok | Kendi BLE istemcimiz (UTE/Youcy protokolü) | 1-3 |
+| Doğru Türkçe bildirimler, uygulamaya göre simge ve titreşim | `0F` bildirim + uygulama tipleri + titreşim komutları | 2-3 |
+| Kayıp saati bulma | Bağlantı kopunca telefonun son konumu, RSSI yakınlık radarı, saati titretme | 4 |
+| Sağlık verilerine sahip olma | Adım, nabız, uyku, SpO2 geçmişi; CSV ve Health Connect'e aktarma | 3-4 |
+| Otomasyon | Tasker, bildirim filtreleri, kişisel kurallar | 4 |
+| Özel saat kadranı | `56FF/34F1` aktarım kanalı üzerinden kadran yükleme | 5 |
+| Find My tarzı kalabalık ağ takibi, özel firmware | Firmware'e yayın eklemek; önce güvenli yedek ve kurtarma yolu kanıtlanmalı | 6, araştırma |
+
+Not: Gerçek Find My / Find Hub kalabalık ağı (başkasının telefonunun saati görüp konum bildirmesi) firmware değişikliği ister. Bu, kurtarma yolu olmadan tek saati bozma riski taşıdığı için en sona bırakıldı. Telefon tarafındaki "son görülen konum" ve radar bu riski taşımadan kayıp saatin çoğu senaryosunu çözer.
+
+## Şu anki sürüm: v0.1 (gate testi)
+
+Tek amacı, Haylou uygulaması olmadan saate bağlanıp konuşabildiğimizi kanıtlamak. Bu çalışmazsa yukarıdaki hiçbir hedef yapılamaz; çalışırsa her aşama bunun üzerine kurulur.
+
+Teknik kaynak: `Haylou_LS05_Ajan_Devir_Notu_v4.md` ve v5 eki.
 
 ## Kapsam
 
