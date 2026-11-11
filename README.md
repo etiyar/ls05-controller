@@ -27,9 +27,9 @@ Teknik kaynak: `Haylou_LS05_Ajan_Devir_Notu_v4.md` ve v5 eki.
 Var:
 - HAYLOU adlı cihazları tarama, tek cihaza bağlanma
 - GATT haritasını loglama ve iki aday komut kanalını bulma:
-  - A: `55FF` servis, yaz `33F1`, dinle `33F2` (Hello Haylou'nun kullandığı)
+  - A: `55FF` servis, `33F1` / `33F2` (Hello Haylou tablosu; bu saatte doğrulamasız yanıt vermedi, doğrulamalı hali test edilmedi)
   - B: `60FF` servis, yaz `6001`, dinle `6002` ve `61FF/6101-6102` (Haylou Fun youcy kodunun kullandığı)
-- Tüm dinleme kanallarını açma (CCCD), sonra **gate yoklaması**: zararsız pil sorgusu (`03`) YALNIZCA A (`55FF/33F1`) üzerinden. B'ye otomatik geçiş kapalı (`autoFallbackToB = false`). Yanıt gelirse logda "KANIT" satırı yazılır.
+- Tüm dinleme kanallarını açma (CCCD), sonra Haylou Fun'ın bağlanma sırası: `33F1` ve `34F1` okumaları, `6001`'e doğrulama (`20 02` + kimlik), `6002`'den `20 04 01`, ardından firmware (`02`) ve pil (`03`). Komut kanalı B (`60FF/6001` → `6002`), gerçek cihazda doğrulandı.
 - Logda açıkça görünenler: GATT haritası, her CCCD aboneliğinin sonucu, her yazmanın sonucu (`yazma tamam` / `YAZMA HATASI`), zaman aşımları, gelen her çerçeve.
 - Ardından firmware sorgusu (`02`). Otomatik gönderilen başka komut yok.
 - Standart pil okuma (`180F/2A19`) çapraz kontrol için
@@ -55,6 +55,10 @@ app/        Android: BLE katmanı (Ls05Ble.kt) ve test ekranı (MainActivity.kt)
 
 - `protocol` modülü Kotlin 2.0.21 ile derlendi, 8/8 test geçti. `LS05TEST123` bildirimi kayıttaki 4 paketle (3 veri + `0F FD`), titreşim komutu kayıttaki 1486 numaralı paketle bayt bayt aynı.
 - `app` modülü burada Android SDK olmadığı için tam derlenemedi; yalnızca sözdizimi denetiminden geçti. Derleme ve kod güvenliği onayı bağımsız inceleme ve Android Studio derlemesiyle verilecek. İlk tam derlemeyi Android Studio yapacak. Hata çıkarsa mesajı aynen gönder.
+
+## Kurulum notu
+
+Şu an her GitHub derlemesi farklı bir test anahtarıyla imzalanıyor. Android farklı imzalı güncellemeyi reddeder: yeni sürümü kurmadan önce eskisini kaldır ve kimliği yeniden gir. Sabit imza anahtarı planlandı (docs/PLAN.md, aşama 0).
 
 ## Derleme
 
@@ -82,12 +86,14 @@ Kullanıcı kimliği kişiseldir: koda ve depoya yazılmaz. Uygulamadaki alana g
 2. Haylou Fun'ı durdur: Ayarlar > Uygulamalar > Haylou Fun > Durmaya zorla. Xiaomi'de "Otomatik başlatma"yı da geçici kapat, yoksa saati geri kapar.
 3. LS05 Controller'ı aç, izinleri ver.
 4. Tara > çıkan "Bağlan: HAYLOU SOLAR" düğmesine bas.
-5. Beklenen: log'da GATT haritası, "Dinleme açıldı … status=0" satırları, "KANIT: A 55FF/33F1 komut kanalı olarak yanıt verdi", sonra `Pil %…` ve `Firmware RH192SV002066`.
+5. Beklenen: log'da GATT haritası, "Dinleme açıldı … status=0" satırları, "KANIT: saat doğrulamayı kabul etti (20 04 01)", sonra `Firmware RH192SV002066` ve `Pil %…`.
 6. Sonuç ne olursa olsun "Logu kopyala" ile logu gönder.
 
 Sonuçların anlamı:
 - Firmware ve pil geldi: bağımsız okuma kanıtlandı. Test bildirimine geç.
-- "A (55FF/33F1) pil sorgusuna yanıt vermedi": bağlantı, CCCD aboneliği ve uygulama seviyesi yetkilendirme incelenecek. B kanalı bu testte denenmez. Eşleştirmeyi SİLME. Logu gönder; bir sonraki adım Haylou'nun bağlanırken gönderdiği ilk paketleri incelemek.
+- "Kimlik girilmedi": kimlik alanını doldur, bağlantıyı kesip yeniden bağlan.
+- "Doğrulama yanıtı yok" veya "reddedildi": kimliği kontrol et. Haylou Fun açıksa kapat.
+- "Saatte onay bekleniyor": saatin ekranına bak; bilinmeyen bir onayı verme. Eşleştirmeyi SİLME. Logu gönder; bir sonraki adım Haylou'nun bağlanırken gönderdiği ilk paketleri incelemek.
 - 133 hatası veya bağlanamıyor: Haylou hâlâ saati tutuyordur. Haylou'yu tekrar durdur, Bluetooth'u kapatıp aç, tekrar dene.
 - "Beklenen UUID'ler yok": GATT haritasını gönder; yazma yapılmaz.
 - Logda "Saat yetki/bağlama durumu bildirdi" satırı görürsen kodunu not et; el sıkışma sorusunun ipucu.

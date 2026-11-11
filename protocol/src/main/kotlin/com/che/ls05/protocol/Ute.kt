@@ -8,12 +8,13 @@ package com.che.ls05.protocol
  */
 object UteUuids {
     /*
-     * İki aday komut kanalı var:
-     *  A) 55FF: yaz 33F1, dinle 33F2. Hello Haylou (bağımsız istemci) pil, firmware, bildirim,
-     *     titreşim ve saat ayarı için bunu kullanır. Kayıttaki bitişik handle'lar (0x22 / 0x24) ile uyumlu.
-     *  B) 60FF: yaz 6001, dinle 6002 (+ 61FF/6101). Haylou Fun'ın youcy kodu bunu kullanır;
-     *     Hello Haylou burayı yalnızca sağlık geçmişi çekmek için kullanır.
-     * Hangisinin LS05'te komut kanalı olduğu ilk bağlantıda pil sorgusuyla deneysel olarak seçilir.
+     * Komut kanalı (KESİN, gerçek cihazda doğrulandı, v0.1.4):
+     *  B) 60FF: yaz 6001 (Write Without Response), dinle 6002. Haylou Fun bunu kullanır.
+     *     Kayıttaki handle 0x0022 = 6001, 0x0024 = 6002 (CCCD 0x25/0x2B/0x2F ile eşlendi).
+     *     Önce 20 02 + kimlik ile doğrulama şart; yoksa saat yanıt vermez ve ~30 sn sonra keser.
+     *  A) 55FF: 33F1 (READ, WRITE) / 33F2. Hello Haylou'nun tablosunda komut kanalı. Bu saatte
+     *     doğrulamasız yanıt vermedi; doğrulamalı hali TEST EDİLMEDİ. Haylou Fun bağlanırken
+     *     33F1'i yalnızca okur (yapılandırma).
      */
     const val CMD_A_SERVICE = "000055ff-0000-1000-8000-00805f9b34fb"
     const val CMD_A_WRITE = "000033f1-0000-1000-8000-00805f9b34fb"
