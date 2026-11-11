@@ -59,10 +59,19 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
      */
     private val probeOnly = "B "
 
+    /**
+     * Kullanıcının Haylou kimliği (4 bayt). Kişisel veri: koda yazılmaz, uygulamada girilir.
+     * Doğrulama (20 02 + kimlik) olmadan saat komutlara cevap vermez ve ~30 sn sonra bağlantıyı keser.
+     */
+    var userId: ByteArray? = null
+
     private var candidates: List<Channel> = emptyList()
     private var active: Channel? = null
     private var probeIndex = -1
     private var pendingCccd = 0
+    private var bindChannel: Channel? = null
+    private var bindSerial = 0
+    private var configReads: List<BluetoothGattCharacteristic> = emptyList()
 
     private sealed class Op {
         abstract val label: String
@@ -160,6 +169,9 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         active = null
         probeIndex = -1
         pendingCccd = 0
+        bindChannel = null
+        bindSerial++
+        configReads = emptyList()
         queue.clear()
         current = null
         listener.onReadyChanged(false)
@@ -269,6 +281,11 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             ch(UteUuids.ALT_NOTIFY_SERVICE, UteUuids.ALT_NOTIFY_2),
         ).filter { it.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 }
 
+        configReads = listOfNotNull(
+            ch(UteUuids.CMD_A_SERVICE, UteUuids.CMD_A_WRITE),
+            ch(UteUuids.TRANSFER_SERVICE, UteUuids.TRANSFER_WRITE),
+        ).filter { it.properties and BluetoothGattCharacteristic.PROPERTY_READ != 0 }
+
         log("Aday komut kanalları: ${candidates.joinToString { "${it.name} [${propsText(it.write.properties)}]" }.ifEmpty { "YOK" }}")
         log("Dinlenecek kanallar: ${listeners.joinToString { shortUuid(it.uuid) }.ifEmpty { "YOK" }}, standart pil ${if (batteryChar != null) "VAR" else "YOK"}")
 
@@ -291,44 +308,67 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         if (pendingCccd == 0) startProbe()
     }
 
-    /** Komut kanalını zararsız pil sorgusuyla doğrular. Varsayılan: yalnızca A. */
+    /**
+     * Haylou Fun'ın bağlanma sırası (haylou_notification_test.log, kayıt 23-32):
+     * 33F1 ve 34F1 yapılandırma okumaları -> 6001'e 20 02 <kimlik> -> 6002'den 20 04 01 -> komutlar.
+     */
     private fun startProbe() {
-        if (active != null) return
-        if (probeIndex < 0) {
-            val all = candidates
-            candidates = all.filter { it.name.startsWith(probeOnly) }
-            log("Yoklama planı: ${candidates.joinToString { it.name }.ifEmpty { "YOK" }} (yalnızca bu kanal, otomatik geçiş yok)")
-            if (candidates.isEmpty()) {
-                status("Kanal ${probeOnly.trim()} yok")
-                log("Kanal bulunamadı; hiçbir komut yazılmadı. GATT haritasını gönder.")
-                return
-            }
-        }
-        probeIndex++
-        if (probeIndex >= candidates.size) {
-            status("Kanal ${probeOnly.trim()} yanıt vermedi")
-            log("SONUÇ: ${candidates.joinToString { it.name }} pil sorgusuna yanıt vermedi. Eşleştirmeyi SİLME. Logu gönder: sıradaki adım el sıkışma incelemesi.")
+        if (active != null || bindChannel != null) return
+        val c = candidates.firstOrNull { it.name.startsWith(probeOnly) }
+        if (c == null) {
+            status("Kanal ${probeOnly.trim()} yok")
+            log("Kanal bulunamadı; hiçbir komut yazılmadı. GATT haritasını gönder.")
             return
         }
-        val c = candidates[probeIndex]
-        status("Kanal deneniyor: ${c.name}")
-        log("Kanal yoklaması ${probeIndex + 1}/${candidates.size}: ${c.name} üzerinden pil sorgusu (03).")
-        enqueue(Op.Write(c.write, UteCommand.batteryRequest(), "yoklama pil sorgu (${c.name})"))
-        val myIndex = probeIndex
+        val id = userId
+        if (id == null) {
+            status("Kimlik girilmedi")
+            log("Doğrulama için Haylou kimliği gerekli. Üstteki alana 8 haneli kimliği yaz, bağlantıyı kesip yeniden bağlan. Hiçbir komut yazılmadı.")
+            return
+        }
+        bindChannel = c
+        configReads.forEach { enqueue(Op.Read(it, "yapılandırma oku ${shortUuid(it.uuid)}")) }
+        status("Doğrulanıyor…")
+        log("Doğrulama: ${c.name} üzerinden 20 02 + kimlik gönderiliyor (Haylou Fun ile aynı sıra).")
+        enqueue(Op.Write(c.write, UteCommand.bindRequest(id), "doğrulama (20 02)"))
+        waitForBind(5_000, "5 sn")
+    }
+
+    private fun waitForBind(ms: Long, label: String) {
+        val serial = ++bindSerial
         main.postDelayed({
-            if (active == null && probeIndex == myIndex && gatt != null) {
-                log("${c.name} 2,5 sn içinde yanıt vermedi.")
-                startProbe()
+            if (active == null && bindChannel != null && bindSerial == serial && gatt != null) {
+                status("Doğrulama yanıtı yok")
+                log("SONUÇ: $label içinde 20 04 yanıtı gelmedi. Eşleştirmeyi SİLME. Logu gönder.")
             }
-        }, 2_500)
+        }, ms)
+    }
+
+    private fun handleAuth(code: Int) {
+        val c = bindChannel ?: return
+        when (code) {
+            1 -> becameReady(c)
+            4 -> {
+                status("Saatte onay bekleniyor")
+                log("Saat 4 döndü: saat ekranında onay istiyor olabilir (Haylou Fun 35 sn bekler). Saatin ekranına bak; bilmediğin bir onayı verme, önce bana sor.")
+                waitForBind(35_000, "35 sn")
+            }
+            else -> {
+                bindSerial++
+                status("Doğrulama reddedildi ($code)")
+                log("SONUÇ: saat doğrulamayı reddetti (durum $code). Kimliği kontrol et. Eşleştirmeyi SİLME. Logu gönder.")
+            }
+        }
     }
 
     private fun becameReady(c: Channel) {
+        bindSerial++
         active = c
-        status("Hazır (${c.name})")
+        status("Hazır (${c.name}, doğrulandı)")
         listener.onReadyChanged(true)
-        log("KANIT: ${c.name} komut kanalı olarak yanıt verdi. Bağımsız okuma çalışıyor.")
+        log("KANIT: saat doğrulamayı kabul etti (20 04 01). Bağımsız bağlantı çalışıyor. Firmware ve pil okunuyor.")
         sendCommand(UteCommand.firmwareRequest(), "firmware sorgu")
+        sendCommand(UteCommand.batteryRequest(), "pil sorgu")
     }
 
     private fun handleRead(ch: BluetoothGattCharacteristic, value: ByteArray, statusCode: Int) {
@@ -343,9 +383,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     private fun handleNotify(ch: BluetoothGattCharacteristic, value: ByteArray) {
         log("<- ${shortUuid(ch.uuid)}: ${Hex.redacted(value)}")
         val frame = UteParser.parse(value)
-        if (active == null && frame is UteFrame.Battery && probeIndex in candidates.indices) {
-            becameReady(candidates[probeIndex])
-        }
+        if (frame is UteFrame.AuthStatus && active == null) handleAuth(frame.code)
         when (frame) {
             is UteFrame.Battery -> log("   = Pil %${frame.percent}")
             is UteFrame.Firmware -> log("   = Firmware ${frame.version}")

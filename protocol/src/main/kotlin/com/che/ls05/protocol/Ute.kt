@@ -52,6 +52,25 @@ object UteCommand {
     /** v0.1'de otomatik çalışmasına izin verilen komutlar. */
     val AUTO_SAFE: Set<Byte> = setOf(FIRMWARE, BATTERY)
 
+    const val BIND: Byte = 0x20
+
+    /**
+     * Doğrulama (bağlama) isteği: 20 02 + 4 bayt kullanıcı kimliği (big-endian).
+     * Haylou Fun bağlanınca bunu 60FF/6001'e yazar; saat 6002'den 20 04 <durum> ile cevap verir.
+     * Kayıtla doğrulandı (haylou_notification_test.log, kayıt 27-28). Kimlik kişiseldir: koda yazılmaz.
+     */
+    fun bindRequest(userId: ByteArray): ByteArray {
+        require(userId.size == 4) { "kimlik 4 bayt olmalı" }
+        return byteArrayOf(BIND, 0x02) + userId
+    }
+
+    /** "0A0B0C0D" gibi 8 haneli onaltılık metni 4 bayta çevirir; geçersizse null. */
+    fun parseUserId(hex: String): ByteArray? {
+        val h = hex.trim().replace(" ", "").replace(":", "")
+        if (h.length != 8 || !h.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) return null
+        return ByteArray(4) { i -> h.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+    }
+
     fun firmwareRequest(): ByteArray = byteArrayOf(FIRMWARE)
     fun batteryRequest(): ByteArray = byteArrayOf(BATTERY)
 
@@ -210,9 +229,12 @@ object Hex {
     fun parse(hex: String): ByteArray =
         hex.split(' ', '\n', '\t').filter { it.isNotBlank() }.map { it.toInt(16).toByte() }.toByteArray()
 
-    /** Bildirim çerçevelerinde metni loglamaz; yalnızca komut, segment ve uzunluk. */
-    fun redacted(bytes: ByteArray): String =
-        if (bytes.isNotEmpty() && bytes[0] == UteCommand.NOTIFICATION && bytes.size > 4) {
+    /** Bildirim metnini ve kullanıcı kimliğini loglamaz. */
+    fun redacted(bytes: ByteArray): String = when {
+        bytes.isNotEmpty() && bytes[0] == UteCommand.NOTIFICATION && bytes.size > 4 ->
             "${of(bytes.copyOf(2))} … (${bytes.size} bayt, içerik gizli)"
-        } else of(bytes)
+        bytes.size >= 6 && bytes[0] == UteCommand.BIND && bytes[1] == 0x02.toByte() ->
+            "20 02 XX XX XX XX (kimlik gizli)"
+        else -> of(bytes)
+    }
 }

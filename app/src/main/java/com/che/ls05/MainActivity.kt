@@ -13,11 +13,14 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.EditText
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.che.ls05.protocol.NotificationState
+import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteFrame
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -37,6 +40,9 @@ class MainActivity : Activity(), Ls05Ble.Listener {
     private lateinit var actionButtons: List<Button>
     private lateinit var confirmRow: LinearLayout
     private lateinit var vibrateBox: CheckBox
+    private lateinit var idInput: EditText
+
+    private val prefs by lazy { getSharedPreferences("ls05", MODE_PRIVATE) }
 
     private val logLines = ArrayList<String>()
     private val timeFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
@@ -99,7 +105,7 @@ class MainActivity : Activity(), Ls05Ble.Listener {
         }
 
         root.addView(TextView(this).apply {
-            text = "LS05 Controller v0.1 (gate 2: kanal B)"
+            text = "LS05 Controller v0.1.4 (doğrulamalı)"
             textSize = 22f
             setTypeface(typeface, Typeface.BOLD)
         })
@@ -110,6 +116,13 @@ class MainActivity : Activity(), Ls05Ble.Listener {
             text = "Durum: Bağlı değil"
         }
         root.addView(statusView)
+
+        idInput = EditText(this).apply {
+            hint = "Haylou kimliği (8 hane, örn. 0A0B0C0D)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            setText(prefs.getString("userId", ""))
+        }
+        root.addView(idInput)
 
         root.addView(row(
             button("Tara") {
@@ -211,7 +224,18 @@ class MainActivity : Activity(), Ls05Ble.Listener {
     }
 
     override fun onDeviceFound(device: BluetoothDevice, name: String, rssi: Int) {
-        deviceList.addView(button("Bağlan: $name ($rssi dBm)") { ble.connect(device) })
+        deviceList.addView(button("Bağlan: $name ($rssi dBm)") {
+            val text = idInput.text.toString()
+            val id = UteCommand.parseUserId(text)
+            if (id == null) {
+                log("Kimlik geçersiz veya boş: 8 haneli onaltılık değer gerekli. Doğrulama yapılmayacak.")
+            } else {
+                prefs.edit().putString("userId", text.trim()).apply()
+                log("Kimlik telefonda kaydedildi (logda gösterilmez).")
+            }
+            ble.userId = id
+            ble.connect(device)
+        })
     }
 
     override fun onFrame(frame: UteFrame) {

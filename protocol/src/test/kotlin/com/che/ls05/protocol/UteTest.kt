@@ -74,6 +74,17 @@ class UteTest {
     }
 
     @Test
+    fun bindRequestFormatAndRedaction() {
+        // Örnek kimlik; gerçek kimlik depoya yazılmaz.
+        val id = UteCommand.parseUserId("0A0B0C0D")!!
+        assertContentEquals(Hex.parse("20 02 0A 0B 0C 0D"), UteCommand.bindRequest(id))
+        assertEquals("20 02 XX XX XX XX (kimlik gizli)", Hex.redacted(UteCommand.bindRequest(id)))
+        assertEquals(null, UteCommand.parseUserId("12345"))
+        assertEquals(null, UteCommand.parseUserId("GGGGGGGG"))
+        assertEquals(UteFrame.AuthStatus(1), UteParser.parse(Hex.parse("20 04 01")))
+    }
+
+    @Test
     fun redactionHidesNotificationText() {
         val first = NotificationPacketizer.build("LS05TEST123", "LS05TEST123")[0]
         val shown = Hex.redacted(first)

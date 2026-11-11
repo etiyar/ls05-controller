@@ -63,6 +63,19 @@ app/        Android: BLE katmanı (Ls05Ble.kt) ve test ekranı (MainActivity.kt)
 3. Run (yeşil üçgen), cihaz olarak telefonu seç.
 4. Protokol testleri: sağ tıkla `protocol/src/test/.../UteTest.kt` > Run.
 
+## Doğrulama (v0.1.4)
+
+Saat, bağlanan uygulamadan önce bir doğrulama ister; gelmezse komutlara cevap vermez ve yaklaşık 30 sn sonra bağlantıyı keser. Haylou Fun'ın kaydedilmiş bağlanma sırası (`haylou_notification_test.log`, kayıt 23-32):
+
+1. `33F1` ve `34F1` yapılandırma okumaları
+2. `60FF/6001`'e `20 02 <4 bayt kullanıcı kimliği>`
+3. Saat `6002`'den `20 04 01` (doğrulandı) döner
+4. Ancak bundan sonra pil (`03`), firmware (`02`) ve diğer komutlar
+
+Kayıttaki handle'lar kesin olarak eşlendi: yazma `0x0022` = `6001`, bildirim `0x0024` = `6002`.
+
+Kullanıcı kimliği kişiseldir: koda ve depoya yazılmaz. Uygulamadaki alana girilir, yalnızca telefonda saklanır, logda `20 02 XX XX XX XX` olarak maskelenir. Saat `4` dönerse ekranında onay isteyebilir; bilinmeyen bir onay verilmez.
+
 ## Gate testi (ilk yapılacak)
 
 1. Saati telefona yakın tut, şarjı yeterli olsun.
