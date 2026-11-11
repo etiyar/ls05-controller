@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,3 +43,13 @@ jobs:
         with:
           name: test-raporu
           path: protocol/build/reports/tests/
+
+      - name: Telefondan indirmek için Release yayınla
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk LS05Controller-debug.apk
+          gh release create "build-${{ github.run_number }}" LS05Controller-debug.apk \
+            --title "LS05 Controller test derlemesi ${{ github.run_number }}" \
+            --notes "Otomatik debug derlemesi, commit ${{ github.sha }}. Kurulum ve gate testi için README'ye bak." \
+            --prerelease
