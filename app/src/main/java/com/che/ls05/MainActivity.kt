@@ -10,6 +10,7 @@ import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -84,6 +85,24 @@ class MainActivity : Activity(), Ls05Ble.Listener {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
+        // Android 15 kenardan kenara çizim: içerik durum ve gezinme çubuklarının altında kalmasın.
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            val (top, bottom) = if (Build.VERSION.SDK_INT >= 30) {
+                val sb = insets.getInsets(WindowInsets.Type.systemBars())
+                sb.top to sb.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                insets.systemWindowInsetTop to insets.systemWindowInsetBottom
+            }
+            v.setPadding(pad, pad + top, pad, pad + bottom)
+            insets
+        }
+
+        root.addView(TextView(this).apply {
+            text = "LS05 Controller v0.1"
+            textSize = 22f
+            setTypeface(typeface, Typeface.BOLD)
+        })
 
         statusView = TextView(this).apply {
             textSize = 18f
