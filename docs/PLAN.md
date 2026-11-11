@@ -61,6 +61,8 @@ Bu bölüm suçlama için değil, aynı hatayı tekrarlamamak için.
 
 ## 3. Değişmez kurallar
 
+İlke: önce işlev, sonra estetik. Arayüz güzelleştirmesi ancak işlevler kabul testlerini geçtikten sonra, uygun olursa yapılır. Hedef, Haylou Fun'a hiç ihtiyaç bırakmayan verimli bir uygulama.
+
 1. Eşleştirme hiçbir koşulda silinmez veya sıfırlanmaz (`07 00`, `07` kodda yok, eklenmez).
 2. Firmware veya kadran aktarımına (`56FF/34F1`, Realtek OTA servisleri) kurtarma yolu kanıtlanmadan yazılmaz.
 3. Doğrulanmamış komut otomatik gönderilmez. Yeni komut önce kayıtla veya kontrollü tek testle doğrulanır.
@@ -102,7 +104,11 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 - Tekrarları ve gürültüyü ele: grup özetleri, güncellenen bildirimler, kalıcı bildirimler (müzik, navigasyon).
 - Bağlantı yokken kısa kuyruk (öneri: son 10 dk, en fazla 20 bildirim), bağlanınca gönder.
 
-**M3: Saat eşitleme**
+**M3: Haylou Fun eşdeğerliği**
+- Kullanıcının Haylou Fun'da gerçekten kullandığı işlevlerin listesi çıkarılır; her biri için komut kayıtla doğrulanıp eklenir. Aday komutlar (Haylou Fun TX tablosu): alarm `06`, rahatsız etme `15`, uzun oturma `14`, saat biçimi `01`, hava durumu `11`, dil `25`, kamera deklanşörü `0E`, müzik `3A`, hedef `92`, cihaz parametreleri `05`.
+- Kabul: kullanıcı bir hafta Haylou Fun'ı açmadan saati kullanabiliyor.
+
+**M4: Saat eşitleme**
 - Bağlanınca `04` ile saat/tarih (kayıttaki biçim). Önce tek kontrollü test.
 
 **v0.2 kabul testleri**
@@ -127,7 +133,7 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 - Önkoşul testi: saat bağlı değilken yayın yapıyor mu, adresi sabit mi.
 - İzinler: arka planda konum; Android 14+ ön plan servis türleri (`connectedDevice` + `location`). Xiaomi'de gerçek test.
 
-**Tartışma maddesi: kişisel gözlem ağı.** Evde, işte, arabada duran eski Android telefonlar veya ucuz bir ESP32, saatin yayınını görüp küçük bir sunucuya (ör. Cloudflare Workers) "şu saatte burada" bildirir. Firmware gerektirmez. Önkoşul yukarıdaki yayın testi. Donanım alımı gerektirebilir; kullanıcı kararı.
+Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Kasım): ek cihaz veya sunucu yok, en kolay erişilebilir yol.
 
 ### v0.4: Sağlık verisi (O-B)
 
@@ -153,17 +159,24 @@ Bu koldan firmware veya kadran yazmaya geçiş, ayrı bir karar ve kurtarma yolu
 
 ---
 
-## 5. Açık kararlar
+## 5. Kararlar
 
-| Karar | Seçenekler | Kimde |
+Verilenler (kullanıcı, 12 Kasım 2026):
+
+| Konu | Karar |
+| --- | --- |
+| Haylou Fun | Bırakılacak. Uygulamamız tek başına yetecek şekilde geliştirilir (v0.2 M3). |
+| Öncelik | Önce işlev, sonra estetik (uygun olursa). |
+| Depo | Özel (private) olacak. Kullanıcı ayarı değiştirir; ardından derlemenin özel depoda çalıştığı test edilir. |
+| Kişisel gözlem ağı | Reddedildi. Kayıp saat yalnızca telefon üzerinden. |
+
+Açık kalanlar:
+
+| Konu | Seçenekler | Kimde |
 | --- | --- | --- |
-| Haylou Fun bırakılacak mı | Tamamen bırak / ara sıra kullan (çakışma yönetimi gerekir) | Kullanıcı |
-| Depo görünürlüğü | Herkese açık kalsın / özel (özel depoda Actions kuyruğu takılmıştı) | Kullanıcı |
-| Kişisel gözlem ağı | v0.3'e ekle / sonraya bırak / hiç | Kullanıcı + ajanlar |
+| Kullanıcının Haylou Fun'da kullandığı işlevler | Liste | Kullanıcı |
 | Kimlik saklama | SharedPreferences (şimdiki) / Android Keystore ile şifreli | Ajanlar |
 | Sağlık kayıtları | Sürekli dinleme / toplu çekme | v0.4'te ölçümle |
-
----
 
 ## 6. İkinci gözden geçirme: bu planda nerede yanılıyor olabiliriz
 
@@ -172,7 +185,7 @@ Bu koldan firmware veya kadran yazmaya geçiş, ayrı bir karar ve kurtarma yolu
 | Varsayım | Yanlışsa ne olur | Nasıl erken anlarız |
 | --- | --- | --- |
 | Haylou Fun her bağlantıda aynı `20 02` kimliğini gönderiyor, saat her seferinde `1` dönüyor | Otomatik yeniden bağlanma bir gün `4` (onay) alıp takılır | M1 dayanıklılık testinde her doğrulama sonucu loglanır |
-| Saat bağlı değilken yayın yapıyor | v0.3 radar ve gözlem ağı çalışmaz | v0.3 önkoşul testi, ilk iş |
+| Saat bağlı değilken yayın yapıyor | v0.3 radarı bağlantı koptuktan sonra çalışmaz | v0.3 önkoşul testi, ilk iş |
 | CompanionDeviceManager HyperOS'ta ön plan servisinden daha dayanıklı | Gereksiz karmaşıklık | M1'de ikisi yan yana ölçülür |
 | `18 03` kaydı nabız | Yanlış sağlık verisi | Kural 5; Haylou Fun ile karşılaştırma |
 | Uygulama tipi baytları bu saatte de aynı | Yanlış simge | M2'de her tip için tek test |
