@@ -150,6 +150,8 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 
 Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Kasım): ek cihaz veya sunucu yok, en kolay erişilebilir yol.
 
+> Arayüz sürümü önerisi (tartışmada): `docs/V04_ARAYUZ_PLANI.md`. Kabul edilirse arayüz v0.4 olur, kadran yükleme v0.5'e kayar.
+
 ### v0.4: Saat kadranı (O-B)
 
 - Kullanıcı kadran değiştiriyor. Hazır kadranlar arasında geçiş komutu yok; değiştirmek, çevrim içi galeriden dosya indirip yüklemek demek.
