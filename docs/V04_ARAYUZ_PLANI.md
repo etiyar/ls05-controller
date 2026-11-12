@@ -168,3 +168,15 @@ Uyku ve hava verisi çözüldükçe Bugün'e kart olarak eklenir. Kadran yüklem
 - **Bağlanınca otomatik okuma:** son okuma 30 dakikadan eskiyse adım ve nabız geçmişi istenir (Haylou Fun her bağlantıda istiyor). Uyku isteği yalnızca elle.
 - **Katmanlar:** protokol (saf Kotlin, 47 birim testi), mantık ve depolama, ekranlar. Arayüz değişirse yalnızca ekranlar yeniden yazılır.
 - **Bilinen sınır:** aynı oturumda zaman aşımından sonra elle yeniden gönderilen komutun onayı, çok gecikmiş ilk komutun onayıyla karışabilir. İki komut aynı değeri taşıdığı için zararsız.
+
+## 13. İlk cihaz görüntüleri sonrası notlar (13 Kasım, 00:19)
+
+v0.4.0 açıldı, dört sekme çalışıyor, eski ayarlar taşındı, test bildirimi saatte göründü.
+
+Estetik aşamasına (işlevler bittikten sonra) bırakılanlar:
+- **AMOLED teması:** sayfa zemini tam siyah (#000000), kartlar mavisiz koyu gri, metin saf beyaz değil kırık beyaz, vurgu nane yeşili aynen. Lacivert kalkar. İsteğe bağlı tema seçimi: Sistem / Koyu (AMOLED) / Açık.
+- **Log katlanır olur:** varsayılan kapalı, açılınca son satırlar. GATT haritası her bağlantıda yazılmaz, yalnızca ayrıntılı logda.
+- "Bağlanınca saati eşitle" altındaki "önce elle dene" yazısı kalkar (saat eşitleme doğrulandı).
+- Bildirim listesinde sistem uygulamaları (ör. System UI Plug-in) alta ya da gizliye alınır.
+
+İlke: önce kullanım kolaylığı ve işlevler kesinleşir, sonra tek turda estetik. Renkler tek dosyada olduğu için tema değişikliği ucuz; yerleşim değişiklikleri estetik turuna kalır.
