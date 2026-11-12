@@ -105,3 +105,53 @@ Uyku ve hava verisi çözüldükçe Bugün'e kart olarak eklenir. Kadran yüklem
 - Kullanıcı kimliği, MAC adresi, bildirim içerikleri, hava şehri ve sağlık değerleri depoya ve loga girmez.
 - `07 00` (eşleşme silme) ve kadran/firmware aktarımı, kurtarma yolu ve açık karar olmadan gönderilmez.
 - Doğrulanmamış komut otomatik gönderilmez; her yeni komut önce tek kontrollü testten geçer.
+
+## 11. İkinci görüş sonrası birleştirilmiş karar (12 Kasım, gece)
+
+İkinci görüş: `LS05_v0.4_Arayuz_Inceleme_Revizyon_Onerileri.md`. Temel ilke ortak: saate uygulanmamış bir komut uygulanmış gibi gösterilmez.
+
+### Kabul edilenler
+
+- **Yuva başına durum makinesi:** `Boşta`, `Gönderiliyor(değer)`, `Onaylandı(değer, zaman)`, `Başarısız`, `Bilinmiyor`.
+  - Saatin onayı (`06 [yuva]`) sürüm taşımıyor. Bu yüzden her yuvada aynı anda en çok bir komut yolda olur.
+  - Onay gelince yoldaki değer "onaylandı" sayılır. Bu arada istenen değer değiştiyse, yenisi onaydan sonra gönderilir. Eski onay yeni isteği ezemez.
+  - Zaman aşımı 5 sn. Aşılırsa `Başarısız` olur; sonraki bağlantıda ya da kullanıcı dokununca yeniden denenir.
+- **Yeniden eşitleme koşulsuz değil.**
+  - Bağlanınca yalnızca istenen değer onaylanandan farklıysa gönderilir.
+  - Sıfırlanma belirtisi görülünce (doğrulama yanıtı `20 04 01` dışında bir değer, ya da uygulama verisinin silinmesi) tüm yuvalar `Bilinmiyor` olur. Kullanıcıya tek dokunuşla "Saate yeniden gönder" sunulur; otomatik yazılmaz.
+  - Çalan veya ertelenmiş alarm testi, koşulsuz gönderim olmadığı için gerekli değil.
+- **Sağlık kayıtları:** her satırda alınma zamanı, telefonun o andaki UTC farkı ve ham bayt tutulur. Cihazın ölçüm zamanı ham baytın içindedir.
+  - Nabızda 0 her zaman "ölçüm yok" sayılır (canlı bir insanda gerçek değer olamaz). Adımda 0 gerçek sıfırdır.
+- **Uzun bildirim sınırı önce görsel olarak ölçülür.** Gelişmiş'e "Uzunluk testi" eklenir. Numaralı bir cetvel metni gönderilir (`01 02 03 … 60`, ardından Türkçe harflerle bir tekrar), saatte görünen son numara okunur. Sınır ancak bundan sonra konur. Emoji zaten temizleniyor.
+- **Kalıcı bildirim** yalnızca anlamlı değişiklikte güncellenir: bağlantı, pil, adımda en az 50 adım fark. Ayrıca en sık dakikada bir.
+- **Görsel yön:** koyu lacivert yüzeyler, kırık beyaz metin, tek nane yeşili vurgu rengi; açık mod da desteklenir. Aralık 8 dp tabanlı, kart köşesi 16 dp, dokunma alanı en az 48 dp.
+- **Durumlar metinle tanımlanır:** boş, yükleniyor, bağlı değil, hata ve veri yok için her ekranda ne görüneceği v0.4.1 öncesinde tabloya yazılır.
+- **Ek cihaz testleri (v0.4.0):** komut sırasında Bluetooth kopması, aynı alarmı arka arkaya 3 kez değiştirme, onay gelmeden uygulamayı kapatma.
+
+### Gerekçeli olarak reddedilen veya ertelenenler
+
+- **Sorgulanabilir ayrı veritabanı:** reddedildi. 90 günlük veri yaklaşık 4.000 kısa satır ve her açılışta milisaniyeler içinde yeniden hesaplanır. Veritabanı şema ve dönüşüm riskini geri getirir. Ham günlük dosyalar tek kaynak. Hesaplanan özetler yalnızca silinip yeniden üretilebilen önbellek.
+- **CI'da ekran görüntüsü testi:** ertelendi. Paparazzi veya Roborazzi yeni bağımlılık; emülatör yavaş ve kararsız. Görsel doğrulama kullanıcının ekran görüntüleriyle yapılır.
+- **Her ekran ve durum için ayrı görsel taslak:** ertelendi. Tek sayfada 4 ekranın taslağı ve durumlar için metin tablosu yeterli.
+- **Ertelenenler:** CompanionDeviceService karşılaştırması (mevcut ön plan servisi HyperOS'ta yeniden bağlanma testini geçti), veri dışa aktarma, animasyonlar, uyku ve hava kartları, kadran.
+- **Yaz saati testi:** öncelik düşük, çünkü Türkiye 2016'dan beri sabit UTC+3. Birim testi ucuz olduğu için yine de yazılır.
+
+### Tasarım bileşenleri
+
+- Renk ve ölçüler `values` ve `values-night` kaynaklarında tutulur.
+- `Ui.kt` içinde 8 yardımcı bulunur: kart, bölüm başlığı, satır, anahtarlı satır, durum etiketi, uyarı bandı, birincil düğme, ikincil düğme. Bütün ekranlar yalnızca bunlarla kurulur.
+- Özel çizim yalnızca adım grafiğinde var.
+- Saatlik adım grafiği uygun, çünkü saatlik toplamlar 7 kayıtta koşu + yürüme ile ve gün toplamı saatin ekranıyla doğrulandı.
+
+### Kesinleşen sıra
+
+1. **v0.4.0, mantık ve güvenilirlik, ekran aynı.**
+   - Durum makinesi ve birim testleri.
+   - Onay ve zaman aşımının servise taşınması.
+   - Sıfırlanma belirtisi.
+   - Ham kayıt deposu.
+   - Gece yarısı ve geç kayıt testleri.
+   - `16` paketi ve 0 nabız.
+   - Uzunluk testi düğmesi.
+2. **v0.4.1:** renk, ölçü ve 8 yardımcı, 4 sekme, durum tablosu, açık/koyu mod ve büyük yazı kontrolü.
+3. **v0.4.2:** Bugün ekranı, saatlik grafik, kalıcı bildirim özeti.
