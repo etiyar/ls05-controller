@@ -2,73 +2,87 @@ package com.che.ls05
 
 import android.Manifest
 import android.app.Activity
+import android.app.Dialog
 import android.app.NotificationManager
+import android.app.TimePickerDialog
 import android.bluetooth.BluetoothDevice
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Typeface
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
-import android.text.InputType
+import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.che.ls05.protocol.NotificationState
-import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteFrame
 
 /**
- * v0.2 kontrol ekranı. Bağlantı servis tarafından tutulur; bu ekran kapansa da devam eder.
- * Önce işlev: sade, programatik arayüz.
+ * v0.4 panel: üst şerit (bağlantı hapı), dört sekme (Bugün, Saat, Bildirimler, Ayarlar), alt çubuk.
+ * Bağlantı servis tarafından tutulur; bu ekran kapansa da devam eder.
  */
 class MainActivity : Activity(), WatchHub.Observer {
 
-    private lateinit var statusView: TextView
-    private lateinit var checklist: LinearLayout
-    private lateinit var idInput: EditText
-    private lateinit var deviceList: LinearLayout
-    private lateinit var actionButtons: List<Button>
-    private lateinit var confirmRow: LinearLayout
-    private lateinit var appList: LinearLayout
-    private lateinit var logView: TextView
-    private lateinit var scroll: ScrollView
-    private lateinit var features: FeaturePanel
+    class SetupItem(val label: String, val ok: Boolean?, val fix: () -> Unit)
 
-    private var notifState = NotificationState.IDLE
-    private val logShown = 300
+    companion object {
+        private const val KEY_TAB = "tab"
+    }
+
+    lateinit var ui: Ui
+    val handler = Handler(Looper.getMainLooper())
+
+    lateinit var today: TodayPage
+    lateinit var watch: WatchPage
+    lateinit var notify: NotifyPage
+    lateinit var settings: SettingsPage
+
+    private lateinit var titleView: TextView
+    private lateinit var statusPill: TextView
+    private lateinit var bottomBar: LinearLayout
+    private lateinit var pages: List<Page>
+    private val tabs = ArrayList<TabItem>()
+    private val dialogs = ArrayList<Dialog>()
+    private var tab = 0
+    private var barPad = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ui = Ui(this)
+        HealthStore.init(applicationContext) // tekrar çağrılırsa bir şey yapmaz
+        tab =(savedInstanceState?.getInt(KEY_TAB, 0) ?: 0).coerceIn(0, 3)
         setContentView(buildUi())
         WatchHub.addObserver(this)
-        refreshLog()
-        onStatus(WatchHub.status)
-        onReadyChanged(WatchHub.ready)
-        if (!hasBlePermissions()) requestBlePermissions()
+        selectTab(tab)
+        refreshTop()
+        if (savedInstanceState == null && !hasBlePermissions()) requestBlePermissions()
     }
 
     override fun onResume() {
         super.onResume()
-        refreshChecklist()
-        refreshApps()
-        features.refreshHealth()
+        refreshAll()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_TAB, tab)
     }
 
     override fun onDestroy() {
         WatchHub.removeObserver(this)
+        handler.removeCallbacksAndMessages(null)
+        dialogs.forEach { if (it.isShowing) it.dismiss() }
+        dialogs.clear()
         super.onDestroy()
     }
 
@@ -81,16 +95,16 @@ class MainActivity : Activity(), WatchHub.Observer {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
-    private fun hasBlePermissions(): Boolean =
+    fun hasBlePermissions(): Boolean =
         blePermissions().all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
-    private fun requestBlePermissions() = requestPermissions(blePermissions(), 1)
+    fun requestBlePermissions() = requestPermissions(blePermissions(), 1)
 
     private fun hasPostNotifications(): Boolean =
         Build.VERSION.SDK_INT < 33 ||
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    private fun hasNotificationAccess(): Boolean {
+    fun hasNotificationAccess(): Boolean {
         val cn = ComponentName(this, NotifyForwarder::class.java)
         return if (Build.VERSION.SDK_INT >= 27) {
             getSystemService(NotificationManager::class.java).isNotificationListenerAccessGranted(cn)
@@ -105,42 +119,32 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        refreshChecklist()
+        refreshAll()
     }
 
-    private fun refreshChecklist() {
-        checklist.removeAllViews()
-        checkRow("Bluetooth izinleri", hasBlePermissions()) { requestBlePermissions() }
+    /** Kurulum denetimleri. ok: true tamam, false eksik, null elle kontrol edilmeli. */
+    fun setupItems(): List<SetupItem> {
+        val list = ArrayList<SetupItem>()
+        list += SetupItem("Bluetooth izinleri", hasBlePermissions()) { requestBlePermissions() }
         if (Build.VERSION.SDK_INT >= 33) {
-            checkRow("Durum bildirimi izni", hasPostNotifications()) {
+            list += SetupItem("Durum bildirimi izni", hasPostNotifications()) {
                 requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
             }
         }
-        checkRow("Bildirim erişimi (iletim için)", hasNotificationAccess()) {
+        list += SetupItem("Bildirim erişimi", hasNotificationAccess()) {
             openSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
-        checkRow("Pil kısıtlaması yok", ignoresBatteryOptimizations()) {
+        list += SetupItem("Pil kısıtlaması kapalı", ignoresBatteryOptimizations()) {
             openSettings(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
         }
-        checkRow("Xiaomi otomatik başlatma (elle kontrol et)", null) { openXiaomiAutostart() }
+        list += SetupItem("Xiaomi otomatik başlatma", null) { openXiaomiAutostart() }
+        return list
     }
 
-    private fun checkRow(label: String, ok: Boolean?, fix: () -> Unit) {
-        val mark = when (ok) {
-            true -> "TAMAM"
-            false -> "EKSİK"
-            null -> "?"
-        }
-        val text = TextView(this).apply { this.text = "$mark  $label"; textSize = 15f }
-        val btn = button(if (ok == true) "Aç" else "Düzelt") { fix() }
-        checklist.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            addView(text, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 2f))
-            addView(btn, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        })
-    }
+    /** İlk eksik kurulum adımının adı; hepsi tamamsa null. Elle kontrol edilenler eksik sayılmaz. */
+    fun firstMissingSetup(): String? = setupItems().firstOrNull { it.ok == false }?.label
 
-    private fun openSettings(intent: Intent) {
+    fun openSettings(intent: Intent) {
         try {
             startActivity(intent)
         } catch (e: Exception) {
@@ -169,260 +173,159 @@ class MainActivity : Activity(), WatchHub.Observer {
         }
     }
 
+    // ---------- Ortak yardımcılar (sayfalar kullanır) ----------
+
+    fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
+    /** Saat hazırsa servis; değilse Toast ve null. */
+    fun readyService(): WatchService? {
+        val s = WatchHub.service
+        if (s == null || !s.isWatchReady()) {
+            toast("Saat bağlı değil.")
+            return null
+        }
+        return s
+    }
+
+    /** Etkinlik kapanırken açık pencereler kapatılsın diye kaydedilir. */
+    fun track(d: Dialog) {
+        dialogs.removeAll { !it.isShowing }
+        dialogs += d
+    }
+
+    fun pickTime(hour: Int, minute: Int, done: (Int, Int) -> Unit) {
+        val d = TimePickerDialog(this, { _, h, m -> done(h, m) }, hour, minute, true)
+        track(d)
+        d.show()
+    }
+
     // ---------- Arayüz ----------
 
     private fun buildUi(): View {
-        val pad = (12 * resources.displayMetrics.density).toInt()
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
+        val root = ui.vertical()
+        root.setBackgroundColor(ui.color(R.color.bg))
+
+        val top = ui.horizontal()
+        top.minimumHeight = ui.dp(56)
+        top.setPadding(ui.dp(20), ui.dp(8), ui.dp(16), ui.dp(8))
+        titleView = ui.text("", 22f, R.color.text, bold = true)
+        ui.add(top, titleView, width = Ui.WRAP)
+        val pillBox = ui.horizontal()
+        pillBox.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
+        statusPill = ui.pill("", Tone.WARN)
+        ui.add(pillBox, statusPill, width = Ui.WRAP)
+        ui.add(top, pillBox, width = 0, weight = 1f, leftDp = 16)
+        ui.add(root, top)
+
+        today = TodayPage(this)
+        watch = WatchPage(this)
+        notify = NotifyPage(this)
+        settings = SettingsPage(this)
+        pages = listOf(today, watch, notify, settings)
+        val content = FrameLayout(this)
+        pages.forEach { content.addView(it.root, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH)) }
+        ui.add(root, content, height = 0, weight = 1f)
+
+        bottomBar = ui.horizontal()
+        bottomBar.setBackgroundColor(ui.color(R.color.card))
+        barPad = ui.dp(4)
+        bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad)
+        val icons = intArrayOf(R.drawable.ic_today, R.drawable.ic_watch, R.drawable.ic_bell, R.drawable.ic_settings)
+        pages.forEachIndexed { i, p ->
+            val item = ui.tabItem(icons[i], p.title) { selectTab(i) }
+            tabs += item
+            ui.add(bottomBar, item.view, width = 0, weight = 1f)
         }
-        scroll = ScrollView(this).apply { addView(root) }
-        scroll.setOnApplyWindowInsetsListener { v, insets ->
-            val (top, bottom) = if (Build.VERSION.SDK_INT >= 30) {
-                val sb = insets.getInsets(WindowInsets.Type.systemBars())
-                sb.top to sb.bottom
-            } else {
-                @Suppress("DEPRECATION")
-                insets.systemWindowInsetTop to insets.systemWindowInsetBottom
-            }
-            v.setPadding(0, top, 0, bottom)
+        ui.add(root, bottomBar)
+
+        root.setOnApplyWindowInsetsListener { v, insets ->
+            applyInsets(v, insets)
             insets
         }
-
-        root.addView(TextView(this).apply {
-            text = "LS05 Controller v0.2"
-            textSize = 22f
-            setTypeface(typeface, Typeface.BOLD)
-        })
-        statusView = TextView(this).apply {
-            textSize = 17f
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        root.addView(statusView)
-
-        root.addView(header("Kurulum"))
-        checklist = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(checklist)
-
-        root.addView(header("Saat"))
-        idInput = EditText(this).apply {
-            hint = "Haylou kimliği (8 hane)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
-                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
-            setText(Prefs.userIdText(this@MainActivity))
-        }
-        root.addView(idInput)
-        root.addView(row(
-            button("Tara") { scan() },
-            button("Bağlan") { connectSaved() },
-            button("Durdur") { WatchService.start(this, WatchService.ACTION_STOP) },
-        ))
-        deviceList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(deviceList)
-
-        root.addView(header("Ayarlar"))
-        root.addView(checkBox("Bildirimleri saate ilet", Prefs.forwardingEnabled(this)) {
-            Prefs.setForwardingEnabled(this, it)
-        })
-        root.addView(checkBox("Bildirimden sonra titret", Prefs.vibrate(this)) { Prefs.setVibrate(this, it) })
-        root.addView(checkBox("Bağlanınca saati otomatik eşitle (önce 'Saati eşitle' ile elle dene)", Prefs.autoTime(this)) {
-            Prefs.setAutoTime(this, it)
-        })
-
-        root.addView(header("Testler"))
-        val fw = button("Firmware") { WatchHub.service?.command(UteCommand.firmwareRequest(), "firmware sorgu") }
-        val bat = button("Pil") { WatchHub.service?.command(UteCommand.batteryRequest(), "pil sorgu") }
-        val time = button("Saati eşitle") { WatchHub.service?.sendTime() }
-        val test = button("Test bildirimi") { sendTest("LS05TEST123", "LS05TEST123") }
-        val tr = button("Türkçe test") { sendTest("Test", "şğıöüç ŞĞİÖÜÇ") }
-        val vib = button("Titreşim") { WatchHub.service?.command(UteCommand.VIBRATE_TEXT, "mesaj titreşimi (06), tek başına") }
-        root.addView(row(fw, bat, time))
-        root.addView(row(test, tr, vib))
-        confirmRow = row(
-            button("Saatte gördüm") { setNotifState(NotificationState.DISPLAYED_CONFIRMED) },
-            button("Görmedim") { setNotifState(NotificationState.NOT_DISPLAYED) },
-        ).apply { visibility = View.GONE }
-        root.addView(confirmRow)
-
-        features = FeaturePanel(this)
-        features.build(root, ::header)
-        actionButtons = listOf(fw, bat, time, test, tr, vib) + features.sendButtons
-
-        root.addView(header("İletilecek uygulamalar"))
-        root.addView(TextView(this).apply {
-            text = "Bildirim gönderen uygulamalar burada görünür. Mesajlaşma uygulamaları varsayılan açık."
-            textSize = 13f
-        })
-        appList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(appList)
-
-        root.addView(header("Log"))
-        root.addView(row(
-            button("Logu kopyala") { copyLog() },
-            button("Logu temizle") { WatchHub.logLines.clear(); logView.text = "" },
-        ))
-        logView = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = 11f
-            setTextIsSelectable(true)
-        }
-        root.addView(logView)
-        return scroll
+        return root
     }
 
-    private fun header(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 18f
-        setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
-    }
-
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        isAllCaps = false
-        setOnClickListener { onClick() }
-    }
-
-    private fun checkBox(label: String, checked: Boolean, onChange: (Boolean) -> Unit) = CheckBox(this).apply {
-        text = label
-        isChecked = checked
-        setOnCheckedChangeListener { _, value -> onChange(value) }
-    }
-
-    private fun row(vararg views: View) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        views.forEach { addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)) }
-    }
-
-    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
-
-    // ---------- Saat seçimi ve bağlantı ----------
-
-    private fun saveId(): Boolean {
-        val text = idInput.text.toString()
-        if (UteCommand.parseUserId(text) == null) {
-            WatchHub.log("Kimlik geçersiz veya boş: 8 haneli onaltılık değer gerekli.")
-            toast("Kimlik geçersiz")
-            return false
-        }
-        Prefs.setUserIdText(this, text)
-        return true
-    }
-
-    private fun scan() {
-        if (!hasBlePermissions()) { requestBlePermissions(); return }
-        deviceList.removeAllViews()
-        if (WatchHub.service == null) WatchService.start(this)
-        statusView.postDelayed({
-            val s = WatchHub.service
-            if (s == null) WatchHub.log("Servis başlamadı; Bluetooth iznini kontrol et.") else s.ble.startScan()
-        }, 600)
-    }
-
-    private fun connectSaved() {
-        if (!hasBlePermissions()) { requestBlePermissions(); return }
-        if (!saveId()) return
-        val address = Prefs.address(this)
-        if (address == null) {
-            WatchHub.log("Kayıtlı saat yok; önce Tara ile saati seç.")
-            return
-        }
-        WatchService.start(this, WatchService.ACTION_CONNECT_NEW, address)
-    }
-
-    // ---------- Uygulama listesi ----------
-
-    private fun refreshApps() {
-        appList.removeAllViews()
-        val pm = packageManager
-        val apps = Prefs.seenApps(this).map { pkg ->
-            val label = try {
-                pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-            } catch (e: Exception) {
-                pkg
-            }
-            pkg to label
-        }.sortedBy { it.second.lowercase() }
-        if (apps.isEmpty()) {
-            appList.addView(TextView(this).apply {
-                text = "Henüz bildirim görülmedi. Bildirim erişimini açtıktan sonra gelen bildirimlerle dolar."
-                textSize = 13f
-            })
-        }
-        apps.forEach { (pkg, label) ->
-            appList.addView(checkBox(label, Prefs.appEnabled(this, pkg)) { Prefs.setAppEnabled(this, pkg, it) })
+    /** Sistem çubukları ve klavye için boşluk. Alt çubuğun zemini gezinme çubuğunun altına uzanır. */
+    private fun applyInsets(v: View, insets: WindowInsets) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            val bars = insets.getInsets(WindowInsets.Type.systemBars())
+            val all = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
+            val imeOpen = all.bottom > bars.bottom
+            v.setPadding(all.left, all.top, all.right, if (imeOpen) all.bottom else 0)
+            bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad + (if (imeOpen) 0 else bars.bottom))
+        } else {
+            @Suppress("DEPRECATION")
+            val left = insets.systemWindowInsetLeft
+            @Suppress("DEPRECATION")
+            val topInset = insets.systemWindowInsetTop
+            @Suppress("DEPRECATION")
+            val right = insets.systemWindowInsetRight
+            @Suppress("DEPRECATION")
+            val bottom = insets.systemWindowInsetBottom
+            v.setPadding(left, topInset, right, 0)
+            bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad + bottom)
         }
     }
 
-    // ---------- Test bildirimi ----------
-
-    private fun sendTest(title: String, body: String) {
-        val s = WatchHub.service
-        if (s == null || !s.isWatchReady()) {
-            WatchHub.log("Saat hazır değil; önce bağlan.")
-            return
+    fun selectTab(i: Int) {
+        tab = i
+        pages.forEachIndexed { k, p -> p.root.visibility = if (k == i) View.VISIBLE else View.GONE }
+        tabs.forEachIndexed { k, t ->
+            val c = ui.color(if (k == i) R.color.accent else R.color.text2)
+            t.label.setTextColor(c)
+            t.icon?.imageTintList = ColorStateList.valueOf(c)
         }
-        if (s.ble.sendNotification(title, body, Prefs.vibrate(this)) == 0) return
-        setNotifState(NotificationState.SENDING)
-        statusView.postDelayed({
-            if (notifState == NotificationState.SENDING) setNotifState(NotificationState.TRANSFER_TIMEOUT)
-        }, 6_000)
+        titleView.text = pages[i].title
+        pages[i].refresh()
     }
 
-    private fun setNotifState(s: NotificationState) {
-        notifState = s
-        val text = when (s) {
-            NotificationState.IDLE -> return
-            NotificationState.SENDING -> "Test bildirimi gönderiliyor…"
-            NotificationState.TRANSFER_DONE -> "Aktarım tamam (saat onayladı). Ekranda gördün mü?"
-            NotificationState.TRANSFER_TIMEOUT -> "Aktarım onayı 6 sn içinde gelmedi. Ekranda gördün mü?"
-            NotificationState.DISPLAYED_CONFIRMED -> "SONUÇ: Test bildirimi saatte göründü (kullanıcı onayı)."
-            NotificationState.NOT_DISPLAYED -> "SONUÇ: Test bildirimi saatte görünmedi (kullanıcı onayı)."
+    private fun refreshTop() {
+        if (WatchHub.ready) {
+            val b = WatchHub.battery
+            ui.setPill(statusPill, if (b != null) "Bağlı · Pil %$b" else "Bağlı", Tone.OK)
+        } else {
+            ui.setPill(statusPill, WatchHub.status, Tone.WARN)
         }
-        WatchHub.log(text)
-        confirmRow.visibility =
-            if (s == NotificationState.TRANSFER_DONE || s == NotificationState.TRANSFER_TIMEOUT) View.VISIBLE else View.GONE
+    }
+
+    private fun refreshAll() {
+        refreshTop()
+        pages.forEach { it.refresh() }
     }
 
     // ---------- WatchHub.Observer ----------
 
     override fun onLog(line: String) {
-        logView.append(line + "\n")
-        val lines = logView.lineCount
-        if (lines > logShown * 2) refreshLog()
+        settings.onLog(line)
     }
 
     override fun onStatus(status: String) {
-        statusView.text = "Durum: $status"
-    }
-
-    override fun onDeviceFound(device: BluetoothDevice, name: String, rssi: Int) {
-        deviceList.addView(button("Bu saati kullan: $name ($rssi dBm)") {
-            if (!saveId()) return@button
-            deviceList.removeAllViews()
-            WatchService.start(this, WatchService.ACTION_CONNECT_NEW, device.address)
-        })
-    }
-
-    override fun onFrame(frame: UteFrame) {
-        if (frame is UteFrame.NotificationTransferDone && notifState == NotificationState.SENDING) {
-            setNotifState(NotificationState.TRANSFER_DONE)
-        }
-        features.onFrame(frame)
+        refreshTop()
+        watch.refresh()
     }
 
     override fun onReadyChanged(ready: Boolean) {
-        actionButtons.forEach { it.isEnabled = ready }
+        refreshTop()
+        watch.refresh()
+        notify.onReady(ready)
+        settings.onReady(ready)
     }
 
-    private fun refreshLog() {
-        logView.text = WatchHub.logLines.toList().takeLast(logShown).joinToString("\n", postfix = "\n")
+    override fun onSettingsChanged() {
+        refreshTop()
+        watch.refresh()
+        settings.refreshWatchInfo()
     }
 
-    private fun copyLog() {
-        val cm = getSystemService(ClipboardManager::class.java)
-        cm.setPrimaryClip(ClipData.newPlainText("LS05 log", WatchHub.logLines.joinToString("\n")))
-        toast("Log kopyalandı (bildirim içerikleri gizli, MAC maskeli).")
+    override fun onHealthChanged() {
+        today.refresh()
+    }
+
+    override fun onDeviceFound(device: BluetoothDevice, name: String, rssi: Int) {
+        settings.onDeviceFound(device, name, rssi)
+    }
+
+    override fun onFrame(frame: UteFrame) {
+        notify.onFrame(frame)
     }
 }

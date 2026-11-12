@@ -1,0 +1,17 @@
+<resources>
+    <!-- Koyu mod: koyu lacivert yüzeyler, kırık beyaz metin, nane yeşili vurgu. -->
+    <color name="bg">#0E1626</color>
+    <color name="card">#172238</color>
+    <color name="field">#213050</color>
+    <color name="text">#F2EFE6</color>
+    <color name="text2">#9AA7BD</color>
+    <color name="accent">#6EE7B7</color>
+    <color name="on_accent">#06281F</color>
+    <color name="ok_bg">#12362E</color>
+    <color name="warn">#F5C451</color>
+    <color name="warn_bg">#3A3113</color>
+    <color name="danger">#F2777A</color>
+    <color name="divider">#263553</color>
+    <color name="thumb_off">#C9D1DE</color>
+    <color name="track_off">#3A4966</color>
+</resources>

@@ -28,6 +28,7 @@ class NotifyForwarder : NotificationListenerService() {
         if (n.flags and skipFlags != 0) return
 
         Prefs.addSeenApp(this, pkg)
+        Prefs.setLastNotified(this, pkg, System.currentTimeMillis())
         if (!Prefs.forwardingEnabled(this) || !Prefs.appEnabled(this, pkg)) return
 
         val extras = n.extras

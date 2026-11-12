@@ -47,6 +47,9 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
 
         /** Doğrulama sonucu: 1 kabul, 4 saatte onay bekleniyor, diğer kodlar ret; null zaman aşımı; -1 kimlik yok. */
         fun onAuthResult(code: Int?) {}
+
+        /** Saatten gelen her ham paket; ayrıştırmadan önce, handleNotify başında çağrılır. */
+        fun onRawFrame(value: ByteArray) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -409,6 +412,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     private var lastLiveLog = 0L
 
     private fun handleNotify(ch: BluetoothGattCharacteristic, value: ByteArray) {
+        listener.onRawFrame(value)
         val frame = UteParser.parse(value)
         // Yürürken saat her saniye canlı adım yollar; logu boğmasın diye dakikada bir yazılır.
         if (frame is UteFrame.Steps && frame.hour.live) {
@@ -420,7 +424,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             listener.onFrame(frame)
             return
         }
-        log("<- ${shortUuid(ch.uuid)}: ${Hex.redacted(value)}")
+        log("<- ${shortUuid(ch.uuid)}: ${rawText(frame, value)}")
         if (frame is UteFrame.AuthStatus && active == null) handleAuth(frame.code)
         when (frame) {
             is UteFrame.Battery -> log("   = Pil %${frame.percent}")
@@ -436,14 +440,28 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.DeviceStatus -> log("   = Saat durumu: rahatsız etme ${if (frame.dndOn) "açık" else "kapalı"} (bayrak 0x%02X, yorum orta güvenli)".format(frame.flags))
             is UteFrame.Steps -> log("   = Adım ${frame.hour.date.day}.${frame.hour.date.month} saat ${frame.hour.hour}: ${frame.hour.total}" + if (frame.hour.consistent) "" else " (toplam tutmuyor!)")
             is UteFrame.StepHistoryEnd -> log("   = Adım geçmişi bitti")
-            is UteFrame.HeartLive -> log("   = Nabız %02d:%02d → ${frame.bpm}".format(frame.hour, frame.minute))
-            is UteFrame.HeartSummary -> log("   = Nabız özeti: en yüksek ${frame.max}, en düşük ${frame.min}, ortalama ${frame.avg}")
+            is UteFrame.HeartLive -> log("   = Canlı nabız kaydı (%02d:%02d)".format(frame.hour, frame.minute))
+            is UteFrame.HeartSummary -> log("   = Nabız özeti alındı (${frame.date.day}.${frame.date.month})")
             is UteFrame.HeartBlockFrame -> log("   = Nabız bloğu ${frame.block.date.day}.${frame.block.date.month} saat ${frame.block.endHour}: ${frame.block.values.count { it != null }} ölçüm")
             is UteFrame.HeartHistoryEnd -> log("   = Nabız geçmişi bitti")
+            is UteFrame.RealHeart -> log("   = Nabız ölçüm paketi (anlamı doğrulanmadı)")
             is UteFrame.Echo -> Unit
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
         listener.onFrame(frame)
+    }
+
+    /** Ham paket logu. Nabız değeri taşıyan paketlerde yalnızca baş baytlar yazılır. */
+    private fun rawText(frame: UteFrame, value: ByteArray): String {
+        val keep = when (frame) {
+            is UteFrame.HeartLive -> 8
+            is UteFrame.HeartSummary -> 8
+            is UteFrame.HeartBlockFrame -> 6
+            is UteFrame.RealHeart -> 2
+            else -> return Hex.redacted(value)
+        }
+        val n = minOf(keep, value.size)
+        return "${Hex.of(value.copyOf(n))} … (${value.size} bayt, nabız değeri gizli)"
     }
 
     // ---------- Komutlar ----------
@@ -460,8 +478,18 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
 
     /** Yalnızca kanıtlanmış 0x0F akışı + kayıttaki titreşim. Paketler arası 50 ms boşluk. */
     fun sendNotification(title: String, body: String, vibrateAfter: Boolean, type: Int = MSG_TYPE_GENERIC): Int {
+        if (active == null) { log("Hazır değil, bildirim gönderilmedi."); return 0 }
+        return sendPackets(NotificationPacketizer.build(title, body, type), vibrateAfter)
+    }
+
+    /** Metni "başlık: gövde" birleştirmesi olmadan, olduğu gibi gönderir (uzunluk testleri için). */
+    fun sendNotificationText(text: String, vibrateAfter: Boolean): Int {
+        if (active == null) { log("Hazır değil, bildirim gönderilmedi."); return 0 }
+        return sendPackets(NotificationPacketizer.buildFromText(text, MSG_TYPE_GENERIC), vibrateAfter)
+    }
+
+    private fun sendPackets(packets: List<ByteArray>, vibrateAfter: Boolean): Int {
         val c = active ?: run { log("Hazır değil, bildirim gönderilmedi."); return 0 }
-        val packets = NotificationPacketizer.build(title, body, type)
         log("Bildirim: ${packets.size} paket (${packets.size - 1} veri + bitiş)${if (vibrateAfter) " + titreşim" else ", titreşimsiz"}. Metin loga yazılmaz.")
         packets.forEachIndexed { i, p ->
             enqueue(Op.Write(c.write, p, "bildirim paket ${i + 1}/${packets.size}", gapAfterMs = 50))

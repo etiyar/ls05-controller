@@ -1,0 +1,17 @@
+<resources>
+    <!-- Açık mod. Tek vurgu rengi: nane yeşili (açık zeminde okunur olması için koyu tonu). -->
+    <color name="bg">#F4F6FA</color>
+    <color name="card">#FFFFFF</color>
+    <color name="field">#E9EDF4</color>
+    <color name="text">#111A2B</color>
+    <color name="text2">#5A6679</color>
+    <color name="accent">#0B8F6C</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="ok_bg">#DDF5EC</color>
+    <color name="warn">#8A5F00</color>
+    <color name="warn_bg">#FFF1CC</color>
+    <color name="danger">#B93A32</color>
+    <color name="divider">#DDE3EC</color>
+    <color name="thumb_off">#FFFFFF</color>
+    <color name="track_off">#B9C2D0</color>
+</resources>

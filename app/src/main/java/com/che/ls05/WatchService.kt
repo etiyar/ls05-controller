@@ -20,8 +20,16 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
+import com.che.ls05.protocol.AlarmSetting
+import com.che.ls05.protocol.DndSetting
+import com.che.ls05.protocol.SettingCommands
+import com.che.ls05.protocol.SettingSync
 import com.che.ls05.protocol.UteCommand
+import com.che.ls05.protocol.UteDate
 import com.che.ls05.protocol.UteFrame
+import com.che.ls05.protocol.UteHealth
+import java.time.LocalDate
 import java.time.ZonedDateTime
 
 /**
@@ -43,6 +51,10 @@ class WatchService : Service(), Ls05Ble.Listener {
         private const val CHANNEL_ID = "watch"
         private const val NOTIF_ID = 1
         private const val MAX_AUTH_TIMEOUTS = 3
+        private const val ACK_TIMEOUT_MS = 8_000L
+        private const val ACK_CHECK_MS = 8_200L
+        private const val HISTORY_STALE_MS = 30 * 60 * 1000L
+        private const val MAX_LIVE_STEPS = 48
 
         fun start(context: Context, action: String = ACTION_START, address: String? = null) {
             val i = Intent(context, WatchService::class.java).setAction(action)
@@ -66,6 +78,12 @@ class WatchService : Service(), Ls05Ble.Listener {
     private var authBlocked = false
     private var authTimeouts = 0
     private var reconnectAttempt = 0
+
+    /** Bağlantı oturumu: her hazır olmada artar. Onay yalnızca aynı oturumda gönderilen komuta sayılır. */
+    private var session = 0
+
+    /** Gecikmeli işler (onay denetimi, geçmiş istekleri) için ortak etiket; servis kapanınca hepsi iptal edilir. */
+    private val delayedToken = Any()
 
     private val reconnectRunnable = Runnable { connectSaved(autoConnect = true) }
 
@@ -95,6 +113,8 @@ class WatchService : Service(), Ls05Ble.Listener {
     override fun onCreate() {
         super.onCreate()
         ble = Ls05Ble(applicationContext, this)
+        HealthStore.init(applicationContext)
+        SettingsStore.sync(applicationContext)
         WatchHub.service = this
         createChannel()
         registerReceiver(btReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
@@ -102,6 +122,7 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     override fun onDestroy() {
         main.removeCallbacks(reconnectRunnable)
+        main.removeCallbacksAndMessages(delayedToken)
         try { unregisterReceiver(btReceiver) } catch (_: Exception) {}
         if (ble.isConnected) {
             restarting = true
@@ -224,6 +245,77 @@ class WatchService : Service(), Ls05Ble.Listener {
         }
     }
 
+    // ---------- Ayar eşitleme ----------
+
+    /** Saat hazırsa gönderilmeyi bekleyen ayarları gönderir. Onay gelmeyenler otomatik yeniden gönderilmez. */
+    fun pushSettings() {
+        if (!ble.isReady) return
+        val sync = SettingsStore.sync(this)
+        val todo = sync.nextToSend()
+        if (todo.isEmpty()) return
+        var sent = 0
+        for ((key, value) in todo) {
+            val cmd = try { SettingCommands.build(key, value) } catch (e: Exception) { null }
+            if (cmd == null) {
+                WatchHub.log("Ayar komutu üretilemedi ($key); gönderilmedi.")
+                continue
+            }
+            ble.sendCommand(cmd, "ayar $key")
+            sync.markSent(key, value, session, System.currentTimeMillis())
+            sent++
+        }
+        if (sent == 0) return
+        SettingsStore.save(this)
+        WatchHub.settingsChanged()
+        main.postAtTime(Runnable { checkAckTimeouts() }, delayedToken, SystemClock.uptimeMillis() + ACK_CHECK_MS)
+    }
+
+    private fun checkAckTimeouts() {
+        val sync = SettingsStore.sync(this)
+        val changed = sync.expire(System.currentTimeMillis(), ACK_TIMEOUT_MS)
+        if (changed.isEmpty()) return
+        SettingsStore.save(this)
+        changed.forEach { WatchHub.log("Onay gelmedi: $it. Otomatik yeniden gönderilmeyecek.") }
+        WatchHub.settingsChanged()
+    }
+
+    private fun handleAck(key: String, ackValue: String?) {
+        val sync = SettingsStore.sync(this)
+        when (sync.onAck(key, session, System.currentTimeMillis(), ackValue)) {
+            SettingSync.Ack.MATCHED -> {
+                SettingsStore.save(this)
+                WatchHub.log("Saat ayarı onayladı ($key).")
+                WatchHub.settingsChanged()
+                // Komut yoldayken kullanıcı değeri değiştirdiyse yeni istek şimdi gider.
+                pushSettings()
+            }
+            SettingSync.Ack.UNMATCHED -> WatchHub.log("Eşleşmeyen onay ($key): hiçbir komuta sayılmadı.")
+        }
+    }
+
+    // ---------- Sağlık geçmişi ----------
+
+    /** Dünden beri adım, 1,5 sn sonra nabız, includeSleep ise 4 sn sonra uyku geçmişini ister. */
+    fun requestHistory(includeSleep: Boolean) {
+        if (!ble.isReady) {
+            WatchHub.log("Saat hazır değil; geçmiş okunmadı.")
+            return
+        }
+        val y = LocalDate.now().minusDays(1)
+        val from = UteDate(y.year, y.monthValue, y.dayOfMonth)
+        val s = session
+        WatchHub.log("Geçmiş okunuyor (dünden beri${if (includeSleep) ", uyku dahil" else ""}).")
+        ble.sendCommand(UteHealth.stepHistory(from), "adım geçmişi (0a)")
+        main.postAtTime(Runnable {
+            if (session == s && ble.isReady) ble.sendCommand(UteHealth.heartHistory(from), "nabız geçmişi (18 FA)")
+        }, delayedToken, SystemClock.uptimeMillis() + 1_500)
+        if (includeSleep) {
+            main.postAtTime(Runnable {
+                if (session == s && ble.isReady) ble.sendCommand(UteHealth.sleepHistory(from), "uyku geçmişi (1d 01)")
+            }, delayedToken, SystemClock.uptimeMillis() + 4_000)
+        }
+    }
+
     private fun flushPending() {
         val notes = WatchHub.drainPending()
         if (notes.isNotEmpty()) WatchHub.log("Kuyruktaki ${notes.size} bildirim gönderiliyor.")
@@ -239,18 +331,48 @@ class WatchService : Service(), Ls05Ble.Listener {
     override fun onDeviceFound(device: BluetoothDevice, name: String, rssi: Int) =
         WatchHub.deviceFound(device, name, rssi)
 
-    override fun onFrame(frame: UteFrame) = WatchHub.frame(frame)
+    override fun onRawFrame(value: ByteArray) {
+        if (HealthStore.add(this, value)) WatchHub.healthChanged()
+    }
+
+    override fun onFrame(frame: UteFrame) {
+        when (frame) {
+            is UteFrame.AlarmAck -> handleAck(AlarmSetting.key(frame.slot), null)
+            is UteFrame.DndAck -> handleAck(DndSetting.KEY, DndSetting.fromEcho(frame.bytes)?.encode())
+            is UteFrame.Steps -> if (frame.hour.live) {
+                val h = frame.hour
+                HealthStore.live["${h.date.year}-${h.date.month}-${h.date.day}-${h.hour}"] = h
+                while (HealthStore.live.size > MAX_LIVE_STEPS) HealthStore.live.remove(HealthStore.live.keys.first())
+                WatchHub.healthChanged()
+            }
+            is UteFrame.StepHistoryEnd -> {
+                Prefs.setLastSync(this, System.currentTimeMillis())
+                WatchHub.healthChanged()
+            }
+            else -> Unit
+        }
+        WatchHub.frame(frame)
+    }
 
     override fun onReadyChanged(ready: Boolean) {
+        // Oturum, gözlemciler haber almadan önce artar ki o sırada yapılan ayar yeni oturuma sayılsın.
+        if (ready) session++
         WatchHub.setReady(ready)
         if (!ready) return
         reconnectAttempt = 0
         authTimeouts = 0
         if (Prefs.autoTime(this)) sendTime("otomatik saat eşitleme (04)")
         flushPending()
+        pushSettings()
+        if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(false)
     }
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {
+        val sync = SettingsStore.sync(this)
+        if (sync.onDisconnect().isNotEmpty()) {
+            SettingsStore.save(this)
+            WatchHub.settingsChanged()
+        }
         WatchHub.setReady(false)
         if (restarting) return
         if (authBlocked) {
@@ -265,6 +387,13 @@ class WatchService : Service(), Ls05Ble.Listener {
     }
 
     override fun onAuthResult(code: Int?) {
+        if (code != null && code != 1 && code != -1) {
+            // Saat yeniden bağlama istiyor ya da reddediyor: sıfırlanmış olabilir, ayarları belirsiz say.
+            SettingsStore.sync(this).markAllUnknown()
+            SettingsStore.save(this)
+            WatchHub.settingsChanged()
+            WatchHub.log("Saat doğrulamada $code döndü; sıfırlanmış olabilir. Ayarlar 'durum bilinmiyor' olarak işaretlendi, otomatik gönderilmeyecek.")
+        }
         when (code) {
             1 -> authTimeouts = 0
             null -> {

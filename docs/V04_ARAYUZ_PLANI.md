@@ -155,3 +155,16 @@ Uyku ve hava verisi çözüldükçe Bugün'e kart olarak eklenir. Kadran yüklem
    - Uzunluk testi düğmesi.
 2. **v0.4.1:** renk, ölçü ve 8 yardımcı, 4 sekme, durum tablosu, açık/koyu mod ve büyük yazı kontrolü.
 3. **v0.4.2:** Bugün ekranı, saatlik grafik, kalıcı bildirim özeti.
+
+## 12. Son kararlar (12 Kasım, 23:30)
+
+- **Tek sürüm:** güvenilirlik ve yeni görünüm v0.4.0'da birlikte gelir (alarm satırları iki kez yazılmasın, tek test turu olsun). Saatlik adım grafiği ve kalıcı bildirim özeti v0.4.1'de.
+- **Ortak ayar modeli:** durum modeli alarma özel değil. Saate giden her ayar (alarm, rahatsız etme, ileride hareketsizlik, dil, hedef) aynı modeli kullanır. Yeni ayar = komut üretici + onay eşleyici + ekran satırı.
+- **Gecikmiş onay:** her bağlantının oturum numarası var. Başka oturumdan ya da zaman aşımından (8 sn) sonra gelen onay hiçbir komuta sayılmaz.
+- **"Onay gelmedi" başarısızlık değildir:** komut uygulanmış olabilir. Otomatik yeniden gönderilmez; satırda "Yeniden gönder" çıkar. Hiç gönderilmemiş istek ise bağlanınca gönderilir.
+- **İfade:** "Saat onayladı · bugün 21:19" (onayın geldiği an). Alarmın çalacağı iddia edilmez.
+- **Ham kayıt:** günlük dosya, yalnızca sona ekleme, bozuk satır atlanır, aynı kayıt iki kez yazılmaz, canlı adım yazılmaz, 90 günden eski gün dosyası bütün olarak silinir. Bulut yedeği kapalı (`allowBackup=false`).
+- **Uzun bildirim:** sınır konmadı. Gelişmiş'te iki cetvel testi var; sınır saatte okunan sayıya göre belirlenecek.
+- **Bağlanınca otomatik okuma:** son okuma 30 dakikadan eskiyse adım ve nabız geçmişi istenir (Haylou Fun her bağlantıda istiyor). Uyku isteği yalnızca elle.
+- **Katmanlar:** protokol (saf Kotlin, 47 birim testi), mantık ve depolama, ekranlar. Arayüz değişirse yalnızca ekranlar yeniden yazılır.
+- **Bilinen sınır:** aynı oturumda zaman aşımından sonra elle yeniden gönderilen komutun onayı, çok gecikmiş ilk komutun onayıyla karışabilir. İki komut aynı değeri taşıdığı için zararsız.

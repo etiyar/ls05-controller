@@ -39,26 +39,17 @@ object Prefs {
         if (pkg !in current) p(c).edit().putStringSet("seenApps", current + pkg).apply()
     }
 
-    /** Saatteki alarmlar okunamıyor; doğruluk kaynağı bu kayıt. Biçim: açık|saat|dakika|gün maskesi. */
-    data class Alarm(val enabled: Boolean, val hour: Int, val minute: Int, val mask: Int)
+    /** Uygulamadan son bildirimin geldiği zaman (ms); 0 = hiç. */
+    fun lastNotified(c: Context, pkg: String): Long = p(c).getLong("last:$pkg", 0L)
+    fun setLastNotified(c: Context, pkg: String, at: Long) = p(c).edit().putLong("last:$pkg", at).apply()
 
-    fun alarm(c: Context, slot: Int): Alarm {
-        val parts = p(c).getString("alarm$slot", null)?.split('|')?.mapNotNull { it.toIntOrNull() }
-        return if (parts != null && parts.size == 4) Alarm(parts[0] == 1, parts[1], parts[2], parts[3])
-        else Alarm(false, 7, 0, 0x3E)
-    }
+    /** Günlük adım hedefi. */
+    fun stepGoal(c: Context): Int = p(c).getInt("stepGoal", 8000)
 
-    fun setAlarm(c: Context, slot: Int, a: Alarm) =
-        p(c).edit().putString("alarm$slot", "${if (a.enabled) 1 else 0}|${a.hour}|${a.minute}|${a.mask}").apply()
+    /** Son başarılı adım geçmişi okuması (ms); 0 = hiç. */
+    fun lastSync(c: Context): Long = p(c).getLong("lastSync", 0L)
+    fun setLastSync(c: Context, at: Long) = p(c).edit().putLong("lastSync", at).apply()
 
-    data class Dnd(val enabled: Boolean, val startHour: Int, val startMinute: Int, val endHour: Int, val endMinute: Int)
-
-    fun dnd(c: Context): Dnd {
-        val parts = p(c).getString("dnd", null)?.split('|')?.mapNotNull { it.toIntOrNull() }
-        return if (parts != null && parts.size == 5) Dnd(parts[0] == 1, parts[1], parts[2], parts[3], parts[4])
-        else Dnd(false, 22, 0, 7, 0)
-    }
-
-    fun setDnd(c: Context, d: Dnd) = p(c).edit()
-        .putString("dnd", "${if (d.enabled) 1 else 0}|${d.startHour}|${d.startMinute}|${d.endHour}|${d.endMinute}").apply()
+    // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
+    // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.
 }
