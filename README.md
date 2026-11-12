@@ -16,7 +16,17 @@ Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, �
 
 Not: Gerçek Find My / Find Hub kalabalık ağı (başkasının telefonunun saati görüp konum bildirmesi) firmware değişikliği ister. Bu, kurtarma yolu olmadan tek saati bozma riski taşıdığı için en sona bırakıldı. Telefon tarafındaki "son görülen konum" ve radar bu riski taşımadan kayıp saatin çoğu senaryosunu çözer.
 
-## Şu anki sürüm: v0.1 (gate testi)
+## Şu anki sürüm: v0.2.0 (test bekliyor)
+
+- Arka planda kalıcı bağlantı (ön plan servisi), uygulama kapalıyken de çalışır. Bildirim çubuğunda "LS05 saat" görünür; oradan durdurulabilir.
+- Kopunca otomatik yeniden bağlanma (2, 5, 15, 30, 60 sn bekleme; saat menzile girince sistem bağlar). Her bağlantıda doğrulama.
+- Doğrulama reddedilirse, saat onay isterse veya kimlik yoksa otomatik deneme durur; 3 kez yanıtsız kalırsa durur. Uygulamadan "Bağlan" ile yeniden başlatılır.
+- Telefon açılınca ve uygulama güncellenince kendiliğinden başlar (kullanıcı "Durdur" demediyse).
+- Telefon bildirimlerini saate iletir: uygulama listesi (mesajlaşma varsayılan açık), uygulama tipi baytı, emoji temizliği, 60 sn tekrar engeli, saat hazır değilken 10 dk / 20 bildirimlik kuyruk.
+- "Saati eşitle" düğmesi (`04`). Otomatik eşitleme varsayılan kapalı; elle doğrulandıktan sonra açılır.
+- Sabit imza: build-10'dan itibaren tüm sürümler aynı anahtarla imzalı, üzerine kurulur. (Önbellek 7 gün kullanılmazsa silinebilir; o zaman bir kez kaldırıp kurmak gerekir.)
+
+## v0.1 (gate testi, tamamlandı)
 
 Tek amacı, Haylou uygulaması olmadan saate bağlanıp konuşabildiğimizi kanıtlamak. Bu çalışmazsa yukarıdaki hiçbir hedef yapılamaz; çalışırsa her aşama bunun üzerine kurulur.
 
@@ -58,7 +68,7 @@ app/        Android: BLE katmanı (Ls05Ble.kt) ve test ekranı (MainActivity.kt)
 
 ## Kurulum notu
 
-Şu an her GitHub derlemesi farklı bir test anahtarıyla imzalanıyor. Android farklı imzalı güncellemeyi reddeder: yeni sürümü kurmadan önce eskisini kaldır ve kimliği yeniden gir. Sabit imza anahtarı planlandı (docs/PLAN.md, aşama 0).
+build-9 ve öncesi her derlemede farklı anahtarla imzalandı. build-10'dan itibaren imza sabit. v0.1.x'ten geçerken bir kez eskisini kaldır ve kimliği yeniden gir; sonraki güncellemeler üzerine kurulur.
 
 ## Derleme
 

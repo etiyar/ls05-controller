@@ -77,7 +77,7 @@ Bu bölüm suçlama için değil, aynı hatayı tekrarlamamak için.
 
 Boyutlar göreli: K (küçük), O (orta), B (büyük). Süre tahmini bilerek verilmedi.
 
-### Aşama 0: Altyapı temizliği (K, v0.2'den önce)
+### Aşama 0: Altyapı temizliği (K, v0.2'den önce) — imza ve gizli veri taraması TAMAMLANDI (12 Kasım)
 
 | İş | Neden | Kabul |
 | --- | --- | --- |
@@ -86,12 +86,12 @@ Boyutlar göreli: K (küçük), O (orta), B (büyük). Süre tahmini bilerek ver
 | Eski belgeleri "ESKİ, bkz. docs/PLAN.md" diye işaretle (v1 çevrim içi devir belgesi dahil) | Yanlış bilginin tekrar okunması | Her eski belgenin başında uyarı |
 | Kuyrukta takılı ilk GitHub işini iptal et | Gürültü | Actions listesi temiz |
 
-### v0.2: Günlük kullanılabilir sürüm (B)
+### v0.2: Günlük kullanılabilir sürüm (B) — M1, M2 ve saat eşitleme yazıldı (v0.2.0, build-11), gerçek cihaz testi bekliyor; alarm ve rahatsız etme kayıt seansını bekliyor
 
 Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden sonrakine geçilmez.
 
 **M1: Arka plan bağlantısı**
-- CompanionDeviceManager ile saati ilişkilendir; bağlıyken `connectedDevice` türünde ön plan servisi; saat tekrar görününce uyan. Saf ön plan servisiyle karşılaştırmalı test.
+- v0.2.0'da yalnızca `connectedDevice` ön plan servisi + autoConnect var. CompanionDeviceManager henüz yok; ön plan servisi Xiaomi'de yetersiz kalırsa eklenecek.
 - Otomatik yeniden bağlanma: üstel bekleme, her bağlantıda doğrulama, kural 7'deki deneme sınırı.
 - Haylou Fun açıkken çakışmayı algıla ve kullanıcıya söyle; döngüye girme.
 - Telefon açılışında (boot) ve uygulama güncellemesinde yeniden başlama.
@@ -106,6 +106,7 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 
 **M3: Basit ayarlar (Haylou Fun eşdeğerliği, 1. kısım)**
 - Alarm (`06`), rahatsız etme (`15`), bağlanınca saat/tarih eşitleme (`04`).
+- `04` biçimi Haylou Fun kodundan kesinleşti: `04 YY YY AA GG ss dd sn TZ`, son bayt UTC farkı (saat). Haftanın günü değil; kayıttaki `03` = UTC+3.
 - Yöntem: Haylou Fun'ın bu ayarları yaparken gönderdiği baytlar bir kayıt seansında yakalanır (bkz. "Kayıt seansı"), birebir tekrarlanır, her biri tek kontrollü testle doğrulanır.
 
 **v0.2 kabul testleri**
