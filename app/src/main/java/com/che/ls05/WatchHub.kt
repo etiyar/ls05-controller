@@ -4,6 +4,9 @@ import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.che.ls05.protocol.HealthSummary
+import com.che.ls05.protocol.StepHour
+import com.che.ls05.protocol.UteDate
 import com.che.ls05.protocol.UteFrame
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,7 +83,29 @@ object WatchHub {
         observers.toList().forEach { it.onDeviceFound(device, name, rssi) }
     }
 
+    /** Sağlık verisi yalnızca bellekte tutulur (v0.3a'da kalıcı kayıt gelecek). */
+    val steps = LinkedHashMap<String, StepHour>()
+    var lastHeart: UteFrame.HeartLive? = null
+    var heartSummary: UteFrame.HeartSummary? = null
+
+    fun stepsToday(): Int? {
+        val c = java.util.Calendar.getInstance()
+        val today = UteDate(c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH) + 1, c.get(java.util.Calendar.DAY_OF_MONTH))
+        if (steps.values.none { it.date == today }) return null
+        return HealthSummary.stepsForDay(today, steps.values)
+    }
+
     fun frame(f: UteFrame) = onMain {
+        when (f) {
+            is UteFrame.Steps -> {
+                val h = f.hour
+                steps["${h.date.year}-${h.date.month}-${h.date.day}-${h.hour}"] = h
+                while (steps.size > 24 * 8) steps.remove(steps.keys.first())
+            }
+            is UteFrame.HeartLive -> lastHeart = f
+            is UteFrame.HeartSummary -> heartSummary = f
+            else -> Unit
+        }
         observers.toList().forEach { it.onFrame(f) }
     }
 

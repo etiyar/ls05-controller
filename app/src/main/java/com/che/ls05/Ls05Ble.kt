@@ -406,9 +406,21 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         if (current is Op.Read) opDone()
     }
 
+    private var lastLiveLog = 0L
+
     private fun handleNotify(ch: BluetoothGattCharacteristic, value: ByteArray) {
-        log("<- ${shortUuid(ch.uuid)}: ${Hex.redacted(value)}")
         val frame = UteParser.parse(value)
+        // Yürürken saat her saniye canlı adım yollar; logu boğmasın diye dakikada bir yazılır.
+        if (frame is UteFrame.Steps && frame.hour.live) {
+            val now = System.currentTimeMillis()
+            if (now - lastLiveLog >= 60_000) {
+                lastLiveLog = now
+                log("<- canlı adım: bu saat ${frame.hour.total} (dakikada bir loglanır)")
+            }
+            listener.onFrame(frame)
+            return
+        }
+        log("<- ${shortUuid(ch.uuid)}: ${Hex.redacted(value)}")
         if (frame is UteFrame.AuthStatus && active == null) handleAuth(frame.code)
         when (frame) {
             is UteFrame.Battery -> log("   = Pil %${frame.percent}")
@@ -418,6 +430,17 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.VibrateAck -> log("   = Titreşim onayı")
             is UteFrame.TimeAck -> log("   = Saat/tarih saat tarafından onaylandı")
             is UteFrame.AuthStatus -> log("   = Saat yetki/bağlama durumu bildirdi: ${frame.code} (anlamı doğrulanmadı)")
+            is UteFrame.AlarmAck -> log("   = Alarm yuvası ${frame.slot} saat tarafından alındı")
+            is UteFrame.DndAck -> log("   = Rahatsız etme ayarı alındı (${if (frame.enabled) "açık" else "kapalı"})")
+            is UteFrame.WeatherAck -> log("   = Hava paketi ${frame.part} alındı")
+            is UteFrame.DeviceStatus -> log("   = Saat durumu: rahatsız etme ${if (frame.dndOn) "açık" else "kapalı"} (bayrak 0x%02X, yorum orta güvenli)".format(frame.flags))
+            is UteFrame.Steps -> log("   = Adım ${frame.hour.date.day}.${frame.hour.date.month} saat ${frame.hour.hour}: ${frame.hour.total}" + if (frame.hour.consistent) "" else " (toplam tutmuyor!)")
+            is UteFrame.StepHistoryEnd -> log("   = Adım geçmişi bitti")
+            is UteFrame.HeartLive -> log("   = Nabız %02d:%02d → ${frame.bpm}".format(frame.hour, frame.minute))
+            is UteFrame.HeartSummary -> log("   = Nabız özeti: en yüksek ${frame.max}, en düşük ${frame.min}, ortalama ${frame.avg}")
+            is UteFrame.HeartBlockFrame -> log("   = Nabız bloğu ${frame.block.date.day}.${frame.block.date.month} saat ${frame.block.endHour}: ${frame.block.values.count { it != null }} ölçüm")
+            is UteFrame.HeartHistoryEnd -> log("   = Nabız geçmişi bitti")
+            is UteFrame.Echo -> Unit
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
         listener.onFrame(frame)

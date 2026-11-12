@@ -11,12 +11,22 @@ Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, �
 | Kayıp saati bulma | Bağlantı kopunca telefonun son konumu, RSSI yakınlık radarı, saati titretme | 4 |
 | Sağlık verilerine sahip olma | Adım, nabız, uyku, SpO2 geçmişi; CSV ve Health Connect'e aktarma | 3-4 |
 | Otomasyon | Tasker, bildirim filtreleri, kişisel kurallar | 4 |
-| Özel saat kadranı | `56FF/34F1` aktarım kanalı üzerinden kadran yükleme | 5 |
+| Özel saat kadranı | Haylou Fun'ın resmi yükleme akışı: `1a 02` / `61FF/6101` veri / `1a 03 00` (12 Kasım kaydı) | 5 |
 | Find My tarzı kalabalık ağ takibi, özel firmware | Firmware'e yayın eklemek; önce güvenli yedek ve kurtarma yolu kanıtlanmalı | 6, araştırma |
 
 Not: Gerçek Find My / Find Hub kalabalık ağı (başkasının telefonunun saati görüp konum bildirmesi) firmware değişikliği ister. Bu, kurtarma yolu olmadan tek saati bozma riski taşıdığı için en sona bırakıldı. Telefon tarafındaki "son görülen konum" ve radar bu riski taşımadan kayıp saatin çoğu senaryosunu çözer.
 
-## Şu anki sürüm: v0.2.0 (test bekliyor)
+## Şu anki sürüm: v0.3.0 (test bekliyor)
+
+v0.2.0'ın üzerine, 12 Kasım Haylou Fun kaydından çözülen komutlarla:
+
+- Alarmlar (3 yuva): saat, günler, açık/kapalı. Ayar saat onay verince kaydedilir. Saatteki alarmlar telefondan okunamadığı için ilk gönderim o yuvanın üzerine yazar.
+- Rahatsız etme: başlangıç, bitiş, açık/kapalı. Ayar saatin yankısıyla kaydedilir.
+- Sağlık (deneysel): "Adım ve nabız geçmişini oku" dünden beri saatlik adım ve 10 dakikalık nabız kayıtlarını ister. Saatin kendiliğinden yolladığı canlı adım ve nabız da gösterilir. Veriler yalnızca bellekte; kalıcı kayıt v0.3a'da.
+- Log: canlı adım dakikada bir yazılır; hava paketindeki şehir ve profil paketi gizlenir.
+- Biçimlerin ayrıntısı ve güven düzeyleri: `docs/PLAN.md` bölüm 4.1.
+
+### v0.2.0
 
 - Arka planda kalıcı bağlantı (ön plan servisi), uygulama kapalıyken de çalışır. Bildirim çubuğunda "LS05 saat" görünür; oradan durdurulabilir.
 - Kopunca otomatik yeniden bağlanma (2, 5, 15, 30, 60 sn bekleme; saat menzile girince sistem bağlar). Her bağlantıda doğrulama.

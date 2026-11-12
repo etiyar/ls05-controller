@@ -38,4 +38,27 @@ object Prefs {
         val current = seenApps(c)
         if (pkg !in current) p(c).edit().putStringSet("seenApps", current + pkg).apply()
     }
+
+    /** Saatteki alarmlar okunamıyor; doğruluk kaynağı bu kayıt. Biçim: açık|saat|dakika|gün maskesi. */
+    data class Alarm(val enabled: Boolean, val hour: Int, val minute: Int, val mask: Int)
+
+    fun alarm(c: Context, slot: Int): Alarm {
+        val parts = p(c).getString("alarm$slot", null)?.split('|')?.mapNotNull { it.toIntOrNull() }
+        return if (parts != null && parts.size == 4) Alarm(parts[0] == 1, parts[1], parts[2], parts[3])
+        else Alarm(false, 7, 0, 0x3E)
+    }
+
+    fun setAlarm(c: Context, slot: Int, a: Alarm) =
+        p(c).edit().putString("alarm$slot", "${if (a.enabled) 1 else 0}|${a.hour}|${a.minute}|${a.mask}").apply()
+
+    data class Dnd(val enabled: Boolean, val startHour: Int, val startMinute: Int, val endHour: Int, val endMinute: Int)
+
+    fun dnd(c: Context): Dnd {
+        val parts = p(c).getString("dnd", null)?.split('|')?.mapNotNull { it.toIntOrNull() }
+        return if (parts != null && parts.size == 5) Dnd(parts[0] == 1, parts[1], parts[2], parts[3], parts[4])
+        else Dnd(false, 22, 0, 7, 0)
+    }
+
+    fun setDnd(c: Context, d: Dnd) = p(c).edit()
+        .putString("dnd", "${if (d.enabled) 1 else 0}|${d.startHour}|${d.startMinute}|${d.endHour}|${d.endMinute}").apply()
 }

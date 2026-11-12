@@ -267,6 +267,34 @@ sealed class UteFrame {
 
     /** 20 04 <durum>: saatin bildirdiği bağlama/yetki durumu (Hello Haylou bunu dinliyor). Anlamı doğrulanmadı. */
     data class AuthStatus(val code: Int) : UteFrame()
+
+    /** 06 [yuva]: alarm yuvası yazıldı. */
+    data class AlarmAck(val slot: Int) : UteFrame()
+
+    /** 15 …: rahatsız etme ayarının aynen geri yollanışı. */
+    data class DndAck(val enabled: Boolean, val bytes: ByteArray) : UteFrame()
+
+    /** 11 [parça]: hava durumu paketi alındı. */
+    data class WeatherAck(val part: Int) : UteFrame()
+
+    /** 0c 02 [bayraklar]: hızlı ayar durumu. 0x08 = rahatsız etme açık (güven: orta, tek örnek). */
+    data class DeviceStatus(val flags: Int) : UteFrame() {
+        val dndOn get() = flags and 0x08 != 0
+    }
+
+    data class Steps(val hour: StepHour) : UteFrame()
+    data class StepHistoryEnd(val checksum: Int) : UteFrame()
+
+    /** 18 03 [tarih] [sa] [dk] [nabız]: saat 10 dakikada bir kendiliğinden yollar. */
+    data class HeartLive(val date: UteDate, val hour: Int, val minute: Int, val bpm: Int) : UteFrame()
+
+    /** 18 04 [tarih] [sa] [dk] [en yüksek] [en düşük] [ortalama]: günlük özet. */
+    data class HeartSummary(val date: UteDate, val max: Int, val min: Int, val avg: Int) : UteFrame()
+    data class HeartBlockFrame(val block: HeartBlock) : UteFrame()
+    data class HeartHistoryEnd(val checksum: Int) : UteFrame()
+
+    /** Tanınan ama anlamı önemsiz yanıtlar (ör. 18 01, 1d 02, 25 …, 01 …). */
+    data class Echo(val bytes: ByteArray) : UteFrame()
     data class Unknown(val bytes: ByteArray) : UteFrame()
 }
 
@@ -289,7 +317,28 @@ object UteParser {
                 else -> UteFrame.Unknown(data)
             }
 
-            0x06.toByte() -> UteFrame.VibrateAck(data)
+            0x06.toByte() ->
+                if (data.size == 2 && (data[1].toInt() and 0xFF) in 1..UteAlarm.SLOTS) UteFrame.AlarmAck(data[1].toInt())
+                else UteFrame.VibrateAck(data)
+
+            0x15.toByte() ->
+                if (data.size >= 7) UteFrame.DndAck(data[6].toInt() == 1, data) else UteFrame.Echo(data)
+
+            0x11.toByte() ->
+                if (data.size >= 2) UteFrame.WeatherAck(data[1].toInt() and 0xFF) else UteFrame.Unknown(data)
+
+            0x0C.toByte() ->
+                if (data.size >= 3 && data[1] == 0x02.toByte()) UteFrame.DeviceStatus(data[2].toInt() and 0xFF)
+                else UteFrame.Unknown(data)
+
+            0x09.toByte(), 0x0A.toByte() -> when {
+                data.size >= 3 && data[1] == UteCommand.SEGMENT_END -> UteFrame.StepHistoryEnd(data[2].toInt() and 0xFF)
+                else -> StepHour.parse(data)?.let { UteFrame.Steps(it) } ?: UteFrame.Unknown(data)
+            }
+
+            0x18.toByte() -> parseHeart(data)
+
+            0x01.toByte(), 0x1D.toByte(), 0x25.toByte() -> UteFrame.Echo(data)
 
             UteCommand.TIME -> UteFrame.TimeAck(data)
 
@@ -298,6 +347,18 @@ object UteParser {
                 else UteFrame.Unknown(data)
 
             else -> UteFrame.Unknown(data)
+        }
+    }
+
+    private fun parseHeart(d: ByteArray): UteFrame {
+        if (d.size < 2) return UteFrame.Unknown(d)
+        val u = { i: Int -> d[i].toInt() and 0xFF }
+        return when (u(1)) {
+            0x03 -> if (d.size >= 9) UteFrame.HeartLive(UteDate.read(d, 2), u(6), u(7), u(8)) else UteFrame.Unknown(d)
+            0x04 -> if (d.size >= 11) UteFrame.HeartSummary(UteDate.read(d, 2), u(8), u(9), u(10)) else UteFrame.Unknown(d)
+            0xFD -> if (d.size >= 3) UteFrame.HeartHistoryEnd(u(2)) else UteFrame.Unknown(d)
+            0x01, 0x02, 0xFA -> UteFrame.Echo(d)
+            else -> HeartBlock.parse(d)?.let { UteFrame.HeartBlockFrame(it) } ?: UteFrame.Unknown(d)
         }
     }
 }
@@ -320,6 +381,10 @@ object Hex {
             "${of(bytes.copyOf(2))} … (${bytes.size} bayt, içerik gizli)"
         bytes.size >= 6 && bytes[0] == UteCommand.BIND && bytes[1] == 0x02.toByte() ->
             "20 02 XX XX XX XX (kimlik gizli)"
+        bytes.size > 11 && bytes[0] == 0x11.toByte() && bytes[1] == 0x01.toByte() ->
+            "${of(bytes.copyOf(11))} … (şehir gizli)"
+        bytes.size >= 10 && bytes[0] == 0x05.toByte() ->
+            "05 … (profil gizli)"
         else -> of(bytes)
     }
 }

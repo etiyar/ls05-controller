@@ -45,6 +45,7 @@ class MainActivity : Activity(), WatchHub.Observer {
     private lateinit var appList: LinearLayout
     private lateinit var logView: TextView
     private lateinit var scroll: ScrollView
+    private lateinit var features: FeaturePanel
 
     private var notifState = NotificationState.IDLE
     private val logShown = 300
@@ -63,6 +64,7 @@ class MainActivity : Activity(), WatchHub.Observer {
         super.onResume()
         refreshChecklist()
         refreshApps()
+        features.refreshHealth()
     }
 
     override fun onDestroy() {
@@ -235,7 +237,6 @@ class MainActivity : Activity(), WatchHub.Observer {
         val test = button("Test bildirimi") { sendTest("LS05TEST123", "LS05TEST123") }
         val tr = button("Türkçe test") { sendTest("Test", "şğıöüç ŞĞİÖÜÇ") }
         val vib = button("Titreşim") { WatchHub.service?.command(UteCommand.VIBRATE_TEXT, "mesaj titreşimi (06), tek başına") }
-        actionButtons = listOf(fw, bat, time, test, tr, vib)
         root.addView(row(fw, bat, time))
         root.addView(row(test, tr, vib))
         confirmRow = row(
@@ -243,6 +244,10 @@ class MainActivity : Activity(), WatchHub.Observer {
             button("Görmedim") { setNotifState(NotificationState.NOT_DISPLAYED) },
         ).apply { visibility = View.GONE }
         root.addView(confirmRow)
+
+        features = FeaturePanel(this)
+        features.build(root, ::header)
+        actionButtons = listOf(fw, bat, time, test, tr, vib) + features.sendButtons
 
         root.addView(header("İletilecek uygulamalar"))
         root.addView(TextView(this).apply {
@@ -404,6 +409,7 @@ class MainActivity : Activity(), WatchHub.Observer {
         if (frame is UteFrame.NotificationTransferDone && notifState == NotificationState.SENDING) {
             setNotifState(NotificationState.TRANSFER_DONE)
         }
+        features.onFrame(frame)
     }
 
     override fun onReadyChanged(ready: Boolean) {

@@ -36,8 +36,8 @@ Durum özeti: Kendi Android uygulamamız Haylou uygulaması olmadan saate bağla
 
 - `55FF/33F1` doğrulamadan sonra komut kabul eder mi (önemsiz, merak konusu)
 - Saat telefona bağlı değilken yayın yapıyor mu, adresi sabit mi (bağlantı koptuktan sonra radarın çalışması için kritik)
-- Sağlık geçmişi biçimleri (adım, uyku, SpO2)
-- Kadran dosya biçimi ve yükleme akışının bu modelde çalışıp çalışmadığı
+- Uyku ve SpO2 biçimleri (adım ve nabız 12 Kasım'da çözüldü, bkz. 4.1)
+- Kadran dosyasının iç biçimi (yükleme akışı 12 Kasım'da kaydedildi, bkz. v0.4)
 - Firmware: tam çip modeli, güvenli önyükleme, imza, çift bank, UART noktaları
 
 ---
@@ -86,7 +86,7 @@ Boyutlar göreli: K (küçük), O (orta), B (büyük). Süre tahmini bilerek ver
 | Eski belgeleri "ESKİ, bkz. docs/PLAN.md" diye işaretle (v1 çevrim içi devir belgesi dahil) | Yanlış bilginin tekrar okunması | Her eski belgenin başında uyarı |
 | Kuyrukta takılı ilk GitHub işini iptal et | Gürültü | Actions listesi temiz |
 
-### v0.2: Günlük kullanılabilir sürüm (B) — M1, M2 ve saat eşitleme yazıldı (v0.2.0, build-11), gerçek cihaz testi bekliyor; alarm ve rahatsız etme kayıt seansını bekliyor
+### v0.2: Günlük kullanılabilir sürüm (B) — M1, M2, saat eşitleme (v0.2.0) ve M3 alarm/rahatsız etme (v0.3.0) yazıldı; gerçek cihaz testi bekliyor
 
 Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden sonrakine geçilmez.
 
@@ -107,7 +107,10 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 **M3: Basit ayarlar (Haylou Fun eşdeğerliği, 1. kısım)**
 - Alarm (`06`), rahatsız etme (`15`), bağlanınca saat/tarih eşitleme (`04`).
 - `04` biçimi Haylou Fun kodundan kesinleşti: `04 YY YY AA GG ss dd sn TZ`, son bayt UTC farkı (saat). Haftanın günü değil; kayıttaki `03` = UTC+3.
-- Yöntem: Haylou Fun'ın bu ayarları yaparken gönderdiği baytlar bir kayıt seansında yakalanır (bkz. "Kayıt seansı"), birebir tekrarlanır, her biri tek kontrollü testle doğrulanır.
+- Yöntem: Haylou Fun'ın baytları 12 Kasım kayıt seansında yakalandı ve Haylou Fun koduyla birebir eşleşti (bkz. bölüm 4.1). v0.3.0'da yazıldı.
+- Alarm: saatteki alarmlar telefondan okunamıyor. Doğruluk kaynağı uygulamanın kaydı; ayar ancak saat `06 <yuva>` onayı verince kaydedilir.
+- Rahatsız etme: ayar ancak saat `15 …` yankısı verince kaydedilir. Saatteki elle açma/kapama `0c 02` durum baytının 0x08 bitinden okunabilir (orta güven).
+- İlk kullanım = kontrollü test: her biri bir kez gönderilir, saatin ekranında doğrulanır, sonuç buraya yazılır.
 
 **v0.2 kabul testleri**
 
@@ -124,8 +127,9 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 
 ### v0.3a: Sağlık verisi ve hava durumu (O-B), Haylou Fun eşdeğerliği 2. kısım
 
-- `18 03` kayıtlarını topla; değer alanını Haylou Fun'ın gösterdiği değerlerle aynı saatlerde karşılaştırarak çöz.
-- Adım, uyku, SpO2 geçmişi: önce Haylou Fun bağlanma/senkron kaydından komutları çıkar (`0A`, `1D 01`, `18 FA` gibi adaylar Hello Haylou'dan), sonra kontrollü test.
+- Çözüldü (bölüm 4.1): adım geçmişi `0a`, canlı adım `09`, nabız geçmişi `18 FA`, canlı nabız `18 03`, günlük nabız özeti `18 04`. v0.3.0'da "Sağlık (deneysel)" bölümü bunları okuyup bellekte gösteriyor.
+- Kabul testi: uygulamadaki "Bugün adım" saatin ekranındaki adımla aynı gün içinde 3 kez karşılaştırılır; fark varsa düzen yeniden incelenir.
+- Uyku (`1d 01` → kayıtta yalnızca `1d 02`, veri yok) ve SpO2 çözülmedi. Uyku için saat bir gece takılıyken yeni bir kayıt gerekir.
 - Saklama yerelde; CSV ve Health Connect dışa aktarma.
 - Hava durumu (`11`, kullanıcı ara sıra kullanıyor): isteğe bağlı, internetten ücretsiz bir kaynakla (ör. Open-Meteo, anahtar gerektirmez). İnternet yalnızca bu özellik açıksa kullanılır.
 - Haylou Fun, v0.3a kabul testlerini geçince bırakılır.
@@ -144,7 +148,8 @@ Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Ka
 
 ### v0.4: Saat kadranı (O-B)
 
-- Kullanıcı kadran değiştiriyor. Haylou Fun'da LS05 için hazır kadranlar arasında geçiş komutu yok; değiştirmek, çevrim içi galeriden dosya indirip yüklemek demek (`SendPlateTask`): `60FF/6001`'e `26 02` başlat, veri `61FF/6101`, `26 03 00` bitir; ayrıca `QueryClockCountTask` (`87`) ve `GetPlateConfigTask`.
+- Kullanıcı kadran değiştiriyor. Hazır kadranlar arasında geçiş komutu yok; değiştirmek, çevrim içi galeriden dosya indirip yüklemek demek.
+- 12 Kasım kaydındaki gerçek akış (önceki `26 02` tahmini yanlıştı; doğru sınıf `UpdateWatchUIEvent`): `1a 01` yapılandırma sorgusu, `1a 02` başlat (yankı `1a 02`), veri `61FF/6101` (handle 0x28) üzerinde 4147 baytlık parçalar (17 yazma), her parça `26 03 04` ile onaylanır, yaklaşık 150 parça ≈ 620 KB, ≈ 2 dk; bitiş `1a 03 00` (yankı `1a 03 00`), ardından `a2 3f`. Başta 0x28 okunur (`00 f4`).
 - Bu, üreticinin resmi yükleme yolu, firmware değil. Yine de bozuk dosyanın etkisi bilinmiyor.
 - Sıra: (1) Haylou'nun kadran galerisi hâlâ çalışıyor mu kontrol et, (2) Haylou Fun'ın bir kadran yüklemesini kaydet, (3) aynı resmi dosyayı bizim uygulamadan birebir yükle, (4) ancak sonra özel kadran araştırılır.
 
@@ -154,7 +159,29 @@ Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Ka
 
 ### Kayıt seansı (kullanıcı, bir kez, yaklaşık 10 dk)
 
-Haylou Fun eşdeğerliği için tahmin yerine birincil kayıt kullanılır. Tek bir btsnoop kaydında sırayla: Haylou Fun'ı aç ve senkron bitsin; bir alarm kur, sonra sil; rahatsız etmeyi aç, kapat; hava durumunu yenile; adım/nabız/uyku verisini yenile; bir kadran değiştir. Her adımdan önce saati not et (log eşleştirmesi için). Dosya ham olarak gönderilir.
+TAMAMLANDI (12 Kasım, 07:16–07:44, 2977 ATT kaydı). Kullanıcının saat notları her adımla eşleşti. Eksik kalan: uyku verisi (gece kaydı gerekir) ve SpO2.
+
+### 4.1 12 Kasım kaydından çözülen komutlar
+
+Güven: Y = kayıt ve Haylou Fun kodu birebir uyuşuyor; O = tek kaynak veya az örnek.
+
+| Komut | Biçim | Güven |
+| --- | --- | --- |
+| Alarm `06` | `06 [gün maskesi] [sa] [dk] 02 08 06 00 [yuva 1..3]`; kapalıysa `06 60 [sa] [dk] 00 00 00 00 [yuva]`. Maske bit0 pazar … bit6 cumartesi (62 hafta içi, 127 her gün, 65 hafta sonu). Yanıt `06 [yuva]`. Önce `87 00` (alarm sayısı sorgusu) gönderiliyor. | Y |
+| Rahatsız etme `15` | `15 00 [baş sa] [baş dk] [bit sa] [bit dk] [01/00]`, yankı aynısı | Y |
+| Hava `11` | 3 paket: `11 01` bugün (kod 2B LE, şimdi/yüksek/düşük, PM2.5 2B, hava kalitesi 2B, şehir UTF-16BE en çok 8 bayt), `11 02` 4 gün, `11 03` 2 gün. Eksi sıcaklıkta bit7. Yanıt `11 01/02/03`. | Y düzen, O kod anlamları |
+| Hava kodları | 1 güneşli, 2 parçalı bulutlu, 3 kapalı, 4 sağanak, 5 gök gürültülü, 6 karla karışık, 7 çisenti, 8 şiddetli yağmur, 9 kar, 10 toz, 11 pus, 12 fırtına (başka saat sürücüsünün eşlemesinden) | O |
+| Adım geçmişi `0a` | İstek `0a [YY YY AA GG] 00 00` (o günden beri). Kayıt 18 bayt: tarih, saat, toplam 2B, koşu (baş dk, son dk, dk, adım 2B), yürüme (aynı). Sonu `0a fd [XOR]`. Okuma kayıtları silmiyor (aynı kayıt iki eşitlemede geldi). | Y toplam, O dakika alanları |
+| Canlı adım `09` | Aynı 18 baytlık düzen; saat yürürken kendiliğinden saniyede bir yollar, istek yok. | Y |
+| Nabız geçmişi `18 FA` | İstek `18 FA [tarih]`. Önce `18 04` özeti (en yüksek, en düşük, ortalama), sonra `18 [tarih] [bitiş saati] + 12 değer` (10 dk aralık, FF yok; blok bitiş saatinden 2 saat öncesini kapsar), sonu `18 fd [XOR]`. | Y |
+| Canlı nabız `18 03` | `18 03 [tarih] [sa] [dk] [nabız]`, 10 dakikada bir kendiliğinden | Y |
+| Geçmiş sonu XOR | Kayıtların komut baytı hariç XOR'u; 4/4 eşitlemede tuttu | Y |
+| Uyku `1d 01 [tarih]` | Yanıt yalnızca `1d 02` (veri yok); Haylou Fun ayrıştırıcısı derlenemedi | bilinmiyor |
+| Durum `0c 02` | Yanıt `0c 02 [bayrak]`; rahatsız etme açılınca 0x42 → 0x4a (bit 0x08) | O |
+| Müzik `12` | `12 0c [1 çalıyor / 2 durdu]`, `12 0d [ses %]`; saat düğmelerden `12 xx` yollayabilir. v0.5 adayı. | O |
+| Dil `25 ab [kod]` | Kayıtta 02 (İngilizce). Haylou Fun tablosunda `tr_TR` = 16. Saat yazılımı Türkçe menüyü destekliyor mu bilinmiyor; tek kontrollü test adayı. | O |
+| Birim/saat biçimi `01` | `01 [mesafe birimi] [saat biçimi]` | Y |
+| Profil `05` | Boy, kilo, yaş, cinsiyet, adım hedefi (8000 = `00 00 1f 40`) vb. Kişisel veri: logda gizlenir, depoya girmez. | Y |
 
 ### Araştırma kolu (paralel, YALNIZCA OKUMA)
 
