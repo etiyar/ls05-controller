@@ -15,6 +15,20 @@ android {
         versionName = "0.2.0"
     }
 
+    // Sabit imza: CI anahtarı .signing/ altında üretir ve önbellekte tutar (depoya girmez, .gitignore).
+    // Dosya yoksa (ör. yerel Android Studio) varsayılan test anahtarı kullanılır.
+    signingConfigs {
+        getByName("debug") {
+            val ks = rootProject.file(".signing/ls05-debug.keystore")
+            if (ks.exists()) {
+                storeFile = ks
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

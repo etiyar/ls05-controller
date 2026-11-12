@@ -29,12 +29,23 @@ jobs:
           if git ls-files | grep -iE '\.log$|btsnoop|bugreport'; then echo "Kayıt dosyası depoda olmamalı"; exit 1; fi
           if git grep -nIE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' -- . ':!*.md'; then echo "Tam MAC adresi bulundu"; exit 1; fi
 
-      # Sabit imza: test anahtarı derlemeler arasında önbellekte tutulur, böylece yeni sürüm eskisinin üzerine kurulur.
+      # Sabit imza: anahtar derlemeler arasında önbellekte tutulur, böylece yeni sürüm eskisinin üzerine kurulur.
       - name: İmza anahtarını geri yükle
         uses: actions/cache@v4
         with:
-          path: ~/.android/debug.keystore
-          key: ls05-debug-keystore-v1
+          path: .signing/ls05-debug.keystore
+          key: ls05-signing-keystore-v1
+
+      - name: İmza anahtarı yoksa üret
+        run: |
+          mkdir -p .signing
+          if [ ! -f .signing/ls05-debug.keystore ]; then
+            echo "Önbellekte anahtar yok, yeni üretiliyor (yalnızca ilk sefer)."
+            keytool -genkeypair -keystore .signing/ls05-debug.keystore -storepass android -keypass android \
+              -alias androiddebugkey -dname "CN=LS05 Controller,C=TR" -keyalg RSA -keysize 2048 -validity 10000
+          else
+            echo "Anahtar önbellekten geri yüklendi."
+          fi
 
       - name: Protokol testleri
         run: |
@@ -45,7 +56,7 @@ jobs:
         run: ./gradlew --no-daemon :app:assembleDebug
 
       - name: İmza parmak izi
-        run: keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep -E 'SHA256' | head -1
+        run: keytool -list -v -keystore .signing/ls05-debug.keystore -storepass android | grep -E 'SHA256' | head -1
 
       - uses: actions/upload-artifact@v4
         with:
