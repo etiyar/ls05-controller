@@ -180,3 +180,27 @@ Estetik aşamasına (işlevler bittikten sonra) bırakılanlar:
 - Bildirim listesinde sistem uygulamaları (ör. System UI Plug-in) alta ya da gizliye alınır.
 
 İlke: önce kullanım kolaylığı ve işlevler kesinleşir, sonra tek turda estetik. Renkler tek dosyada olduğu için tema değişikliği ucuz; yerleşim değişiklikleri estetik turuna kalır.
+
+## 14. Diğer iki uygulamadaki özellikler (13 Kasım, ekran görüntülerinden)
+
+Aday listesi. Her biri protokolü kayıt ya da kodla doğrulanmadan gönderilmez.
+
+**Haylou Fun:**
+- Ekran açık kalma süresi (5 sn), bileği kaldırınca ekran, 24 saat biçimi (komut `01` / `05` ailesi, kısmen çözüldü).
+- Otomatik nabız ölçümü (açık), gün boyu SpO2 (kapalı).
+- Saati bul, rahatsız etme (bizde var), kadran galerisi (v0.5).
+- Ana ekran: adım halkası, egzersiz dakikası, kalori, stres, SpO2; nabız için gün/hafta/ay/yıl grafikleri ve aralık + ortalama.
+
+**Hello Haylou:**
+- Arama bildirimi: gelen arama, internet araması, cevapsız arama (tip 3 bilinen).
+- Etkinlik hatırlatıcı (takvimden saate).
+- Metin ayarları: emojiyi ifadeye çevirme, harf sadeleştirme, hatırlatma tekrarı.
+- Saatin müzik düğmeleriyle telefonu kumanda etme: telefonu bul, ses aç/kıs, sessize al, el feneri (saatten gelen `12 xx` paketleri).
+- Veri dışa aktarma (etkinlik, uyku, nabız, egzersiz).
+
+Önerilen öncelik (işlevler bitince, estetikten önce):
+1. Arama bildirimi ve cevapsız arama (günlük kullanım, düşük risk, tip zaten bilinir).
+2. Saatten telefonu bul + müzik kumandası (saat paketlerini dinlemek yeter, saate yazma yok).
+3. Ekran süresi, bileği kaldırma, otomatik nabız ayarları (ortak ayar modeline eklenir; önce Haylou Fun kaydı gerekir).
+4. Nabız ve adım için hafta/ay görünümü (veri zaten saklanıyor).
+5. Dışa aktarma, etkinlik hatırlatıcı, stres/SpO2 (sonra).
