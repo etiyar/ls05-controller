@@ -20,6 +20,7 @@ import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteFrame
 import com.che.ls05.protocol.UteParser
 import com.che.ls05.protocol.UteUuids
+import com.che.ls05.protocol.MSG_TYPE_GENERIC
 import java.util.UUID
 
 /**
@@ -40,6 +41,12 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         fun onDeviceFound(device: BluetoothDevice, name: String, rssi: Int)
         fun onFrame(frame: UteFrame)
         fun onReadyChanged(ready: Boolean)
+
+        /** Bağlantı kapandı. userInitiated: kullanıcı kesti. status: GATT durum kodu. */
+        fun onDisconnected(userInitiated: Boolean, status: Int) {}
+
+        /** Doğrulama sonucu: 1 kabul, 4 saatte onay bekleniyor, diğer kodlar ret; null zaman aşımı; -1 kimlik yok. */
+        fun onAuthResult(code: Int?) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -89,6 +96,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     private var current: Op? = null
     private var opSerial = 0
     private var scanning = false
+    private var userDisconnect = false
     private val seen = mutableSetOf<String>()
 
     val isConnected: Boolean get() = gatt != null
@@ -138,7 +146,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
 
     // ---------- Bağlantı ----------
 
-    fun connect(device: BluetoothDevice) {
+    fun connect(device: BluetoothDevice, autoConnect: Boolean = false) {
         if (gatt != null) {
             log("Zaten bir cihaza bağlı. Önce bağlantıyı kes. (Tek cihaz kuralı)")
             return
@@ -146,18 +154,28 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         stopScan()
         log("Bağlanılıyor: ${maskMac(device.address)}, bond=${bondText(device.bondState)}")
         status("Bağlanılıyor…")
-        gatt = if (Build.VERSION.SDK_INT >= 23) {
-            device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-        } else {
-            device.connectGatt(context, false, gattCallback)
-        }
+        userDisconnect = false
+        gatt = device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
     fun disconnect() {
         val g = gatt ?: return
         log("Bağlantı kullanıcı tarafından kesiliyor.")
+        userDisconnect = true
         g.disconnect()
-        main.postDelayed({ closeGatt("kullanıcı kesti") }, 1_000)
+        main.postDelayed({
+            if (gatt === g) {
+                closeGatt("kullanıcı kesti")
+                listener.onDisconnected(true, 0)
+            }
+        }, 1_000)
+    }
+
+    /** Bluetooth kapandığında vb. sessizce kapatır; yeniden bağlanma kararı servise aittir. */
+    fun forceClose(reason: String) {
+        if (gatt == null) return
+        closeGatt(reason)
+        listener.onDisconnected(false, -1)
     }
 
     private fun closeGatt(reason: String) {
@@ -176,7 +194,8 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         current = null
         listener.onReadyChanged(false)
         status("Bağlı değil")
-        log("Bağlantı kapandı ($reason). Otomatik yeniden bağlanma yok.")
+        userDisconnect = false
+        log("Bağlantı kapandı ($reason).")
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
@@ -192,7 +211,11 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         val hint = if (statusCode == 133) " (133: genel GATT hatası. Haylou uygulaması saati tutuyor olabilir; onu durdurup tekrar dene.)" else ""
                         log("Bağlantı koptu, status=$statusCode$hint")
-                        closeGatt("koptu")
+                        val user = userDisconnect
+                        if (gatt != null) {
+                            closeGatt("koptu")
+                            listener.onDisconnected(user, statusCode)
+                        }
                     }
                 }
             }
@@ -324,6 +347,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         if (id == null) {
             status("Kimlik girilmedi")
             log("Doğrulama için Haylou kimliği gerekli. Üstteki alana 8 haneli kimliği yaz, bağlantıyı kesip yeniden bağlan. Hiçbir komut yazılmadı.")
+            listener.onAuthResult(-1)
             return
         }
         bindChannel = c
@@ -339,13 +363,15 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         main.postDelayed({
             if (active == null && bindChannel != null && bindSerial == serial && gatt != null) {
                 status("Doğrulama yanıtı yok")
-                log("SONUÇ: $label içinde 20 04 yanıtı gelmedi. Eşleştirmeyi SİLME. Logu gönder.")
+                log("SONUÇ: $label içinde 20 04 yanıtı gelmedi. Eşleştirmeyi SİLME. Haylou Fun açıksa kapat.")
+                listener.onAuthResult(null)
             }
         }, ms)
     }
 
     private fun handleAuth(code: Int) {
         val c = bindChannel ?: return
+        listener.onAuthResult(code)
         when (code) {
             1 -> becameReady(c)
             4 -> {
@@ -390,6 +416,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.NotificationSegmentAck -> log("   = Bildirim segment ${frame.segment} onayı")
             is UteFrame.NotificationTransferDone -> log("   = Bildirim aktarımı tamam (tip ${frame.type}, uzunluk ${frame.length}). Ekranda görünüp görünmediğini sen onayla.")
             is UteFrame.VibrateAck -> log("   = Titreşim onayı")
+            is UteFrame.TimeAck -> log("   = Saat/tarih saat tarafından onaylandı")
             is UteFrame.AuthStatus -> log("   = Saat yetki/bağlama durumu bildirdi: ${frame.code} (anlamı doğrulanmadı)")
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
@@ -409,15 +436,15 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     }
 
     /** Yalnızca kanıtlanmış 0x0F akışı + kayıttaki titreşim. Paketler arası 50 ms boşluk. */
-    fun sendNotification(title: String, body: String, vibrateAfter: Boolean): Int {
+    fun sendNotification(title: String, body: String, vibrateAfter: Boolean, type: Int = MSG_TYPE_GENERIC): Int {
         val c = active ?: run { log("Hazır değil, bildirim gönderilmedi."); return 0 }
-        val packets = NotificationPacketizer.build(title, body)
+        val packets = NotificationPacketizer.build(title, body, type)
         log("Bildirim: ${packets.size} paket (${packets.size - 1} veri + bitiş)${if (vibrateAfter) " + titreşim" else ", titreşimsiz"}. Metin loga yazılmaz.")
         packets.forEachIndexed { i, p ->
             enqueue(Op.Write(c.write, p, "bildirim paket ${i + 1}/${packets.size}", gapAfterMs = 50))
         }
         // Kayıttaki sıra: 0F FD'den hemen sonra mesaj titreşimi. İsteğe bağlı.
-        if (vibrateAfter) enqueue(Op.Write(c.write, UteCommand.VIBRATE_TEXT, "mesaj titreşimi (06)"))
+        if (vibrateAfter) enqueue(Op.Write(c.write, UteCommand.VIBRATE_TEXT, "mesaj titreşimi (06)", gapAfterMs = 300))
         return packets.size
     }
 

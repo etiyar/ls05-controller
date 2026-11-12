@@ -24,6 +24,18 @@ jobs:
       - name: Android SDK kontrol
         run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" | tail -3
 
+      - name: Kişisel veri taraması
+        run: |
+          if git ls-files | grep -iE '\.log$|btsnoop|bugreport'; then echo "Kayıt dosyası depoda olmamalı"; exit 1; fi
+          if git grep -nIE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' -- . ':!*.md'; then echo "Tam MAC adresi bulundu"; exit 1; fi
+
+      # Sabit imza: test anahtarı derlemeler arasında önbellekte tutulur, böylece yeni sürüm eskisinin üzerine kurulur.
+      - name: İmza anahtarını geri yükle
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: ls05-debug-keystore-v1
+
       - name: Protokol testleri
         run: |
           chmod +x gradlew
@@ -31,6 +43,9 @@ jobs:
 
       - name: APK derle (debug)
         run: ./gradlew --no-daemon :app:assembleDebug
+
+      - name: İmza parmak izi
+        run: keytool -list -v -keystore ~/.android/debug.keystore -storepass android | grep -E 'SHA256' | head -1
 
       - uses: actions/upload-artifact@v4
         with:

@@ -85,6 +85,29 @@ class UteTest {
     }
 
     @Test
+    fun timeSyncMatchesRecording() {
+        // Kayıt: 04 07 EA 0B 0B 13 33 2B 03 = 2026-11-11 19:51:43, UTC+3
+        assertContentEquals(Hex.parse("04 07 EA 0B 0B 13 33 2B 03"), UteCommand.timeSync(2026, 11, 11, 19, 51, 43, 3))
+        assertTrue(UteParser.parse(Hex.parse("04 07 EA 0B 0B 13 33 2B 03")) is UteFrame.TimeAck)
+    }
+
+    @Test
+    fun sanitizerRemovesEmojiAndKeepsTurkish() {
+        assertEquals("Merhaba şğıöüç ŞĞİÖÜÇ", TextSanitizer.clean("Merhaba \uD83D\uDE00 şğıöüç\nŞĞİÖÜÇ \u2764\uFE0F"))
+        val cleaned = TextSanitizer.clean("a\uD83D\uDC4D".repeat(200))
+        NotificationPacketizer.encode(cleaned).let { assertEquals(0, it.size % 2) }
+        assertEquals("", TextSanitizer.clean("\uD83D\uDE00\u200D"))
+    }
+
+    @Test
+    fun appTypeMapping() {
+        assertEquals(7, AppTypeMap.forPackage("com.whatsapp.w4b"))
+        assertEquals(24, AppTypeMap.forPackage("org.telegram.messenger"))
+        assertEquals(4, AppTypeMap.forPackage("com.example.unknown"))
+        assertTrue("com.whatsapp" in AppTypeMap.defaultOn)
+    }
+
+    @Test
     fun redactionHidesNotificationText() {
         val first = NotificationPacketizer.build("LS05TEST123", "LS05TEST123")[0]
         val shown = Hex.redacted(first)

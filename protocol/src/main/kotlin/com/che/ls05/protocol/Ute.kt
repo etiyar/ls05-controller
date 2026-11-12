@@ -72,6 +72,20 @@ object UteCommand {
         return ByteArray(4) { i -> h.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
     }
 
+    const val TIME: Byte = 0x04
+
+    /**
+     * Saat/tarih eşitleme: 04 YY YY AA GG ss dd sn TZ.
+     * Son bayt saat dilimi farkı (saat, tam sayı). Kaynak: Haylou Fun SetDeviceDateEvent
+     * (TimeZone offset / 3600000). Kayıt: 04 07 EA 0B 0B 13 33 2B 03 = 2026-11-11 19:51:43, UTC+3.
+     * Saat bunu aynen geri yollar.
+     */
+    fun timeSync(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, utcOffsetHours: Int): ByteArray =
+        byteArrayOf(
+            TIME, (year shr 8).toByte(), year.toByte(), month.toByte(), day.toByte(),
+            hour.toByte(), minute.toByte(), second.toByte(), utcOffsetHours.toByte(),
+        )
+
     fun firmwareRequest(): ByteArray = byteArrayOf(FIRMWARE)
     fun batteryRequest(): ByteArray = byteArrayOf(BATTERY)
 
@@ -80,6 +94,35 @@ object UteCommand {
      * VIBRATE_TEXT olarak tanımlı. Bildirim akışının parçası olarak kanıtlı.
      */
     val VIBRATE_TEXT: ByteArray = byteArrayOf(0x06, 0, 0, 0, 0x02, 0x02, 0, 0)
+}
+
+/** Bildirim metnini saatin çizebileceği hale getirir. */
+object TextSanitizer {
+    /**
+     * Emoji ve 4 baytlık karakterleri, birleştiricileri, kontrol karakterlerini çıkarır; satır sonlarını
+     * boşluğa çevirir. Sonuçta her karakter UTF-16'da 2 bayt olur, böylece 254 baytlık kesme hiçbir
+     * karakteri ortadan bölmez.
+     */
+    fun clean(input: String): String {
+        val sb = StringBuilder(input.length)
+        var i = 0
+        while (i < input.length) {
+            val cp = input.codePointAt(i)
+            i += Character.charCount(cp)
+            val type = Character.getType(cp)
+            when {
+                cp == '\n'.code || cp == '\r'.code || cp == '\t'.code -> sb.append(' ')
+                cp > 0xFFFF -> Unit
+                cp in 0xFE00..0xFE0F -> Unit
+                cp in 0x2600..0x27BF -> Unit
+                type == Character.CONTROL.toInt() -> Unit
+                type == Character.FORMAT.toInt() -> Unit
+                type == Character.SURROGATE.toInt() -> Unit
+                else -> sb.appendCodePoint(cp)
+            }
+        }
+        return sb.toString().replace(Regex(" {2,}"), " ").trim()
+    }
 }
 
 /** Uygulama türü baytı (Hello Haylou tablosu). Saatte simge karşılıkları henüz test edilmedi. */
@@ -104,6 +147,42 @@ object UteAppType {
     const val EMAIL = 19
     const val YOUTUBE = 23
     const val TELEGRAM = 24
+}
+
+/** Android paket adı -> bildirim tipi baytı. Bilinmeyenler 4 (mesaj). */
+object AppTypeMap {
+    private val map: Map<String, Int> = mapOf(
+        "com.whatsapp" to UteAppType.WHATSAPP,
+        "com.whatsapp.w4b" to UteAppType.WHATSAPP,
+        "org.telegram.messenger" to UteAppType.TELEGRAM,
+        "org.telegram.messenger.web" to UteAppType.TELEGRAM,
+        "org.thunderdog.challegram" to UteAppType.TELEGRAM,
+        "com.facebook.orca" to UteAppType.MESSENGER,
+        "com.facebook.katana" to UteAppType.FACEBOOK,
+        "com.instagram.android" to UteAppType.INSTAGRAM,
+        "com.twitter.android" to UteAppType.TWITTER,
+        "com.skype.raider" to UteAppType.SKYPE,
+        "jp.naver.line.android" to UteAppType.LINE,
+        "com.linkedin.android" to UteAppType.LINKEDIN,
+        "com.viber.voip" to UteAppType.VIBER,
+        "com.kakao.talk" to UteAppType.KAKAOTALK,
+        "com.vkontakte.android" to UteAppType.VK,
+        "com.snapchat.android" to UteAppType.SNAPCHAT,
+        "com.google.android.gm" to UteAppType.EMAIL,
+        "com.microsoft.office.outlook" to UteAppType.EMAIL,
+        "com.google.android.youtube" to UteAppType.YOUTUBE,
+        "com.tencent.mm" to UteAppType.WECHAT,
+        "com.tencent.mobileqq" to UteAppType.QQ,
+    )
+
+    fun forPackage(pkg: String): Int = map[pkg] ?: UteAppType.MESSAGE
+
+    /** İlk kurulumda iletimi açık gelen uygulamalar: mesajlaşma ve SMS. Diğerleri kullanıcı açınca. */
+    val defaultOn: Set<String> = setOf(
+        "com.whatsapp", "com.whatsapp.w4b",
+        "org.telegram.messenger", "org.telegram.messenger.web",
+        "com.google.android.apps.messaging", "com.android.mms", "com.samsung.android.messaging",
+    )
 }
 
 /** Kayıttaki parça boyutu. MTU büyük olsa bile 20 baytta kalınır. */
@@ -183,6 +262,9 @@ sealed class UteFrame {
     data class NotificationTransferDone(val type: Int?, val length: Int?) : UteFrame()
     data class VibrateAck(val bytes: ByteArray) : UteFrame()
 
+    /** 04 …: saat, gönderilen saat/tarihi aynen geri yollar. */
+    data class TimeAck(val bytes: ByteArray) : UteFrame()
+
     /** 20 04 <durum>: saatin bildirdiği bağlama/yetki durumu (Hello Haylou bunu dinliyor). Anlamı doğrulanmadı. */
     data class AuthStatus(val code: Int) : UteFrame()
     data class Unknown(val bytes: ByteArray) : UteFrame()
@@ -208,6 +290,8 @@ object UteParser {
             }
 
             0x06.toByte() -> UteFrame.VibrateAck(data)
+
+            UteCommand.TIME -> UteFrame.TimeAck(data)
 
             0x20.toByte() ->
                 if (data.size >= 3 && data[1] == 0x04.toByte()) UteFrame.AuthStatus(data[2].toInt() and 0xFF)
