@@ -165,6 +165,8 @@ TAMAMLANDI (12 Kasım, 07:16–07:44, 2977 ATT kaydı). Kullanıcının saat not
 
 Güven: Y = kayıt ve Haylou Fun kodu birebir uyuşuyor; O = tek kaynak veya az örnek.
 
+Hello Haylou kuralı: o uygulama birçok saat markasını destekliyor. Yalnızca LS05 ile aynı UUID'leri kullanan UTE sürücüsü (`c8/a3`) okunur ve oradan gelen her bilgi, kayıt veya Haylou Fun ile doğrulanana kadar "aday" sayılır. Tek başına Hello Haylou'ya dayanan komut gönderilmez. Yasak listesi oradan da teyitli: `07 00` = eşleşmeyi silme.
+
 | Komut | Biçim | Güven |
 | --- | --- | --- |
 | Alarm `06` | `06 [gün maskesi] [sa] [dk] 02 08 06 00 [yuva 1..3]`; kapalıysa `06 60 [sa] [dk] 00 00 00 00 [yuva]`. Maske bit0 pazar … bit6 cumartesi (62 hafta içi, 127 her gün, 65 hafta sonu). Yanıt `06 [yuva]`. Önce `87 00` (alarm sayısı sorgusu) gönderiliyor. | Y |
@@ -176,7 +178,9 @@ Güven: Y = kayıt ve Haylou Fun kodu birebir uyuşuyor; O = tek kaynak veya az 
 | Nabız geçmişi `18 FA` | İstek `18 FA [tarih]`. Önce `18 04` özeti (en yüksek, en düşük, ortalama), sonra `18 [tarih] [bitiş saati] + 12 değer` (10 dk aralık, FF yok; blok bitiş saatinden 2 saat öncesini kapsar), sonu `18 fd [XOR]`. | Y |
 | Canlı nabız `18 03` | `18 03 [tarih] [sa] [dk] [nabız]`, 10 dakikada bir kendiliğinden | Y |
 | Geçmiş sonu XOR | Kayıtların komut baytı hariç XOR'u; 4/4 eşitlemede tuttu | Y |
-| Uyku `1d 01 [tarih]` | Yanıt yalnızca `1d 02` (veri yok); Haylou Fun ayrıştırıcısı derlenemedi | bilinmiyor |
+| Uyku `1d 01 [tarih]` | Hello Haylou: başlangıç `1d 01 …`, kayıtlar `1e …` ayrı kanaldan (`61FF/6102`, uygulama zaten abone), son `1d 02`. Kayıtta yalnızca `1d 02` geldi (o gece veri yoktu). `1e` iç düzeni çözülmedi; uygulama bilinmeyen çerçeveyi ham logladığı için bir gece sonraki log yeterli. | O |
+| SpO2 `86 FA` | İstek `86 FA [tarih] 00 00` (Haylou Fun), veri `86 FA …`, son `86 FA FD` (Hello Haylou). İki uygulama uyuşuyor. | O |
+| Hareketsizlik uyarısı `14` | `14 [açık] [aralık dk] 02 05 00 00 [baş sa] [baş dk] [bit sa] [bit dk] [öğle arası]` (Haylou Fun); Hello Haylou da `14` diyor | O |
 | Durum `0c 02` | Yanıt `0c 02 [bayrak]`; rahatsız etme açılınca 0x42 → 0x4a (bit 0x08) | O |
 | Müzik `12` | `12 0c [1 çalıyor / 2 durdu]`, `12 0d [ses %]`; saat düğmelerden `12 xx` yollayabilir. v0.5 adayı. | O |
 | Dil `25 ab [kod]` | Kayıtta 02 (İngilizce). Haylou Fun tablosunda `tr_TR` = 16. Saat yazılımı Türkçe menüyü destekliyor mu bilinmiyor; tek kontrollü test adayı. | O |
