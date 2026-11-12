@@ -81,7 +81,7 @@ Boyutlar göreli: K (küçük), O (orta), B (büyük). Süre tahmini bilerek ver
 
 | İş | Neden | Kabul |
 | --- | --- | --- |
-| Sabit imza anahtarı: keystore GitHub Secret olarak, depoya asla girmez | Güncellemeler üzerine kurulabilsin, kimlik ve ayarlar silinmesin | İki ardışık derlemenin sertifika parmak izi aynı |
+| Sabit imza anahtarı. Şimdilik kullanıcı adımı gerektirmeyen yol: test anahtarını GitHub Actions önbelleğinde tut. Depo özel olunca keystore GitHub Secret'a taşınır; depoya asla girmez. | Güncellemeler üzerine kurulabilsin, kimlik ve ayarlar silinmesin | İki ardışık derlemenin sertifika parmak izi aynı |
 | CI'ya gizli veri taraması (kimlik deseni, MAC, `.log`) | Depo herkese açık | Desen bulununca derleme kırmızı |
 | Eski belgeleri "ESKİ, bkz. docs/PLAN.md" diye işaretle (v1 çevrim içi devir belgesi dahil) | Yanlış bilginin tekrar okunması | Her eski belgenin başında uyarı |
 | Kuyrukta takılı ilk GitHub işini iptal et | Gürültü | Actions listesi temiz |
@@ -104,12 +104,9 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 - Tekrarları ve gürültüyü ele: grup özetleri, güncellenen bildirimler, kalıcı bildirimler (müzik, navigasyon).
 - Bağlantı yokken kısa kuyruk (öneri: son 10 dk, en fazla 20 bildirim), bağlanınca gönder.
 
-**M3: Haylou Fun eşdeğerliği**
-- Kullanıcının Haylou Fun'da gerçekten kullandığı işlevlerin listesi çıkarılır; her biri için komut kayıtla doğrulanıp eklenir. Aday komutlar (Haylou Fun TX tablosu): alarm `06`, rahatsız etme `15`, uzun oturma `14`, saat biçimi `01`, hava durumu `11`, dil `25`, kamera deklanşörü `0E`, müzik `3A`, hedef `92`, cihaz parametreleri `05`.
-- Kabul: kullanıcı bir hafta Haylou Fun'ı açmadan saati kullanabiliyor.
-
-**M4: Saat eşitleme**
-- Bağlanınca `04` ile saat/tarih (kayıttaki biçim). Önce tek kontrollü test.
+**M3: Basit ayarlar (Haylou Fun eşdeğerliği, 1. kısım)**
+- Alarm (`06`), rahatsız etme (`15`), bağlanınca saat/tarih eşitleme (`04`).
+- Yöntem: Haylou Fun'ın bu ayarları yaparken gönderdiği baytlar bir kayıt seansında yakalanır (bkz. "Kayıt seansı"), birebir tekrarlanır, her biri tek kontrollü testle doğrulanır.
 
 **v0.2 kabul testleri**
 
@@ -124,7 +121,16 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 | 3 gün pil | Telefon ve saat pili Haylou Fun dönemiyle karşılaştırılır |
 | Loglar | İçerik, kimlik, tam MAC yok |
 
-### v0.3: Kayıp saat (O)
+### v0.3a: Sağlık verisi ve hava durumu (O-B), Haylou Fun eşdeğerliği 2. kısım
+
+- `18 03` kayıtlarını topla; değer alanını Haylou Fun'ın gösterdiği değerlerle aynı saatlerde karşılaştırarak çöz.
+- Adım, uyku, SpO2 geçmişi: önce Haylou Fun bağlanma/senkron kaydından komutları çıkar (`0A`, `1D 01`, `18 FA` gibi adaylar Hello Haylou'dan), sonra kontrollü test.
+- Saklama yerelde; CSV ve Health Connect dışa aktarma.
+- Hava durumu (`11`, kullanıcı ara sıra kullanıyor): isteğe bağlı, internetten ücretsiz bir kaynakla (ör. Open-Meteo, anahtar gerektirmez). İnternet yalnızca bu özellik açıksa kullanılır.
+- Haylou Fun, v0.3a kabul testlerini geçince bırakılır.
+- Karar: kayıtları sürekli mi dinleyelim, bağlanınca toplu mu çekelim (pil karşılaştırması ile).
+
+### v0.3b: Kayıp saat (O)
 
 - Son görülen konum: kopma anını değil, RSSI'nin son kez güçlü olduğu anın konumunu kaydet (eşik test edilecek, öneri ≥ −70 dBm).
 - Kalite eşiği: doğruluğu kötü (öneri > 50 m) veya bayat (> 2 dk) konum iyi konumun üzerine yazılmaz; doğruluk yarıçapı saklanır, harita üzerinde daire olarak gösterilir.
@@ -135,16 +141,19 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 
 Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Kasım): ek cihaz veya sunucu yok, en kolay erişilebilir yol.
 
-### v0.4: Sağlık verisi (O-B)
+### v0.4: Saat kadranı (O-B)
 
-- `18 03` kayıtlarını topla; değer alanını Haylou Fun'ın gösterdiği değerlerle aynı saatlerde karşılaştırarak çöz.
-- Adım, uyku, SpO2 geçmişi: önce Haylou Fun bağlanma/senkron kaydından komutları çıkar (`0A`, `1D 01`, `18 FA` gibi adaylar Hello Haylou'dan), sonra kontrollü test.
-- Saklama yerelde; CSV ve Health Connect dışa aktarma.
-- Karar: kayıtları sürekli mi dinleyelim, bağlanınca toplu mu çekelim (pil karşılaştırması ile).
+- Kullanıcı kadran değiştiriyor. Haylou Fun'da LS05 için hazır kadranlar arasında geçiş komutu yok; değiştirmek, çevrim içi galeriden dosya indirip yüklemek demek (`SendPlateTask`): `60FF/6001`'e `26 02` başlat, veri `61FF/6101`, `26 03 00` bitir; ayrıca `QueryClockCountTask` (`87`) ve `GetPlateConfigTask`.
+- Bu, üreticinin resmi yükleme yolu, firmware değil. Yine de bozuk dosyanın etkisi bilinmiyor.
+- Sıra: (1) Haylou'nun kadran galerisi hâlâ çalışıyor mu kontrol et, (2) Haylou Fun'ın bir kadran yüklemesini kaydet, (3) aynı resmi dosyayı bizim uygulamadan birebir yükle, (4) ancak sonra özel kadran araştırılır.
 
 ### v0.5: Otomasyon (K-O)
 
 - Tasker/intent arayüzü; kural motoru (sessiz saatler, kişiye göre titreşim, saat düğmesi olayı `12`).
+
+### Kayıt seansı (kullanıcı, bir kez, yaklaşık 10 dk)
+
+Haylou Fun eşdeğerliği için tahmin yerine birincil kayıt kullanılır. Tek bir btsnoop kaydında sırayla: Haylou Fun'ı aç ve senkron bitsin; bir alarm kur, sonra sil; rahatsız etmeyi aç, kapat; hava durumunu yenile; adım/nabız/uyku verisini yenile; bir kadran değiştir. Her adımdan önce saati not et (log eşleştirmesi için). Dosya ham olarak gönderilir.
 
 ### Araştırma kolu (paralel, YALNIZCA OKUMA)
 
@@ -167,14 +176,14 @@ Verilenler (kullanıcı, 12 Kasım 2026):
 | --- | --- |
 | Haylou Fun | Bırakılacak. Uygulamamız tek başına yetecek şekilde geliştirilir (v0.2 M3). |
 | Öncelik | Önce işlev, sonra estetik (uygun olursa). |
-| Depo | Özel (private) olacak. Kullanıcı ayarı değiştirir; ardından derlemenin özel depoda çalıştığı test edilir. |
+| Depo | Şimdilik herkese açık; özel yapma ertelendi. Kişisel veri kuralı bu yüzden aynen geçerli. |
 | Kişisel gözlem ağı | Reddedildi. Kayıp saat yalnızca telefon üzerinden. |
+| Kullanılan işlevler | Alarm, rahatsız etme, hava durumu (ara sıra), adım, nabız ve diğer sağlık verileri, kadran değiştirme. Bildirimler test edildi. |
 
 Açık kalanlar:
 
 | Konu | Seçenekler | Kimde |
 | --- | --- | --- |
-| Kullanıcının Haylou Fun'da kullandığı işlevler | Liste | Kullanıcı |
 | Kimlik saklama | SharedPreferences (şimdiki) / Android Keystore ile şifreli | Ajanlar |
 | Sağlık kayıtları | Sürekli dinleme / toplu çekme | v0.4'te ölçümle |
 
