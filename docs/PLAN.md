@@ -111,7 +111,7 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 - Alarm: saatteki alarmlar telefondan okunamıyor. Doğruluk kaynağı uygulamanın kaydı; ayar ancak saat `06 <yuva>` onayı verince kaydedilir.
 - Rahatsız etme: ayar ancak saat `15 …` yankısı verince kaydedilir. Saatteki elle açma/kapama `0c 02` durum baytının 0x08 bitinden okunabilir (orta güven).
 - İlk kullanım = kontrollü test: her biri bir kez gönderilir, saatin ekranında doğrulanır, sonuç buraya yazılır.
-- 12 Kasım: alarm yuvaları 1 ve 2, rahatsız etme açık/kapalı saat tarafından onaylandı (`06 01`, `06 02`, `15` yankısı). Çalma testi kullanıcıdan bekleniyor.
+- 12 Kasım: alarm yuvaları 1 ve 2, rahatsız etme açık/kapalı saat tarafından onaylandı (`06 01`, `06 02`, `15` yankısı). Alarm 2 (21:20) saatte çaldı: alarm uçtan uca GEÇTİ.
 - 12 Kasım 21:07: bağlantı iki kez koptu (status 8, 62), servis kendisi yeniden bağlandı, arada gelen 3 bildirim kuyruktan iletildi. M1/M2 yeniden bağlanma testi GEÇTİ.
 - Uzun bildirimde saat `0F FD 04 A0` döndü: 254 bayt gönderildi, 160 bayt alındı. Saat ilk 80 karakteri tutuyor olabilir (O). Doğrulanırsa metin 80 karakterde kesilir.
 
