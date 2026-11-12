@@ -150,6 +150,12 @@ object UteHealth {
     /** 18 FA [tarih]: önce 18 04 özet, sonra 2 saatlik nabız blokları, sonra 18 FD [xor]. */
     fun heartHistory(from: UteDate): ByteArray = byteArrayOf(0x18, 0xFA.toByte()) + from.bytes()
 
+    /**
+     * 1d 01 [tarih] 00: uyku geçmişi (Haylou Fun biçimi). Kayıtlar 1e … olarak 61FF/6102'den gelir,
+     * son 1d 02. 1e düzeni çözülmedi; ham loglanır.
+     */
+    fun sleepHistory(from: UteDate): ByteArray = byteArrayOf(0x1D, 0x01) + from.bytes() + byteArrayOf(0)
+
     /** Geçmiş sonu baytı: kayıtların komut baytı hariç tüm baytlarının XOR'u. Güven: yüksek (4/4). */
     fun historyChecksum(records: List<ByteArray>): Int =
         records.fold(0) { acc, r -> (1 until r.size).fold(acc) { a, i -> a xor u8(r, i) } }

@@ -22,7 +22,7 @@ v0.2.0'ın üzerine, 12 Kasım Haylou Fun kaydından çözülen komutlarla:
 
 - Alarmlar (3 yuva): saat, günler, açık/kapalı. Ayar saat onay verince kaydedilir. Saatteki alarmlar telefondan okunamadığı için ilk gönderim o yuvanın üzerine yazar.
 - Rahatsız etme: başlangıç, bitiş, açık/kapalı. Ayar saatin yankısıyla kaydedilir.
-- Sağlık (deneysel): "Adım ve nabız geçmişini oku" dünden beri saatlik adım ve 10 dakikalık nabız kayıtlarını ister. Saatin kendiliğinden yolladığı canlı adım ve nabız da gösterilir. Veriler yalnızca bellekte; kalıcı kayıt v0.3a'da.
+- Sağlık (deneysel): "Adım, nabız ve uyku geçmişini oku" dünden beri saatlik adım ve 10 dakikalık nabız kayıtlarını ister; uyku kayıtları henüz çözülmediği için ham loglanır. Saatin kendiliğinden yolladığı canlı adım ve nabız da gösterilir. Veriler yalnızca bellekte; kalıcı kayıt v0.3a'da.
 - Log: canlı adım dakikada bir yazılır; hava paketindeki şehir ve profil paketi gizlenir.
 - Biçimlerin ayrıntısı ve güven düzeyleri: `docs/PLAN.md` bölüm 4.1.
 

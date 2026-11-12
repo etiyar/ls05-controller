@@ -55,7 +55,7 @@ class FeaturePanel(private val a: Activity) {
         root.addView(header("Sağlık (deneysel)"))
         healthView = TextView(a)
         root.addView(healthView)
-        val read = btn("Adım ve nabız geçmişini oku") { readHealth() }
+        val read = btn("Adım, nabız ve uyku geçmişini oku") { readHealth() }
         sendButtons += read
         root.addView(read)
         refreshHealth()
@@ -168,6 +168,7 @@ class FeaturePanel(private val a: Activity) {
         svc.command(UteHealth.stepHistory(from), "adım geçmişi (0a), dünden beri")
         // Haylou Fun da iki isteği arka arkaya yolluyor; yine de adım yanıtına kısa süre tanınır.
         main.postDelayed({ WatchHub.service?.command(UteHealth.heartHistory(from), "nabız geçmişi (18 FA), dünden beri") }, 1500)
+        main.postDelayed({ WatchHub.service?.command(UteHealth.sleepHistory(from), "uyku geçmişi (1d 01), dünden beri; kayıtlar ham loglanır") }, 4000)
     }
 
     fun refreshHealth() {

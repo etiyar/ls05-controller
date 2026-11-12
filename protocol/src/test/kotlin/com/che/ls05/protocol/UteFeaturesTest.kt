@@ -86,6 +86,7 @@ class UteFeaturesTest {
         val d = UteDate(2026, 11, 12)
         assertContentEquals(Hex.parse("0A 07 EA 0B 0C 00 00"), UteHealth.stepHistory(d))
         assertContentEquals(Hex.parse("18 FA 07 EA 0B 0C"), UteHealth.heartHistory(d))
+        assertContentEquals(Hex.parse("1D 01 07 EA 0B 05 00"), UteHealth.sleepHistory(UteDate(2026, 11, 5)))
     }
 
     @Test
