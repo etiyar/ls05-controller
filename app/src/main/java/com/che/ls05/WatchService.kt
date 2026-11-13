@@ -195,7 +195,29 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     // ---------- Bağlantı yönetimi ----------
 
-    fun isWatchReady(): Boolean = ble.isReady
+    fun isWatchReady(): Boolean = ble.isReady && !face.active
+
+    // ---------- Kadran ----------
+
+    val face by lazy {
+        FaceUpload(ble) {
+            if (face.phase == FaceUpload.Phase.DONE && WatchHub.faceId.isNotEmpty()) {
+                Prefs.setCurrentFace(this, WatchHub.faceId)
+            }
+            // Yükleme bitti ya da durdu: bekleyen trafik şimdi gider.
+            if (ble.isReady) {
+                flushPending()
+                pushSettings()
+            }
+        }
+    }
+
+    /** Ayarlar ekranından çağrılır. Başlatılamazsa nedeni döner. */
+    fun startFace(file: com.che.ls05.protocol.FaceFile, id: String): String? {
+        if (face.active) return "Yükleme zaten sürüyor."
+        WatchHub.faceId = id
+        return face.start(file)
+    }
 
     private fun resetAuth() {
         authBlocked = false
@@ -354,7 +376,7 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     /** Telefonun müzik durumu ve ses düzeyi (12 0C, 12 0D). Haylou Fun bağlanınca ve değişince gönderiyor. */
     private fun sendMusicState() {
-        if (!ble.isReady || !Prefs.remoteControl(this)) return
+        if (!ble.isReady || face.active || !Prefs.remoteControl(this)) return
         ble.sendCommand(UteMusic.playState(PhoneRemote.isMusicActive(this)), "müzik durumu (12 0C)")
         ble.sendCommand(UteMusic.volume(PhoneRemote.volumePercent(this)), "ses düzeyi (12 0D)")
     }
@@ -363,7 +385,7 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     /** Saat hazırsa gönderilmeyi bekleyen ayarları gönderir. Onay gelmeyenler otomatik yeniden gönderilmez. */
     fun pushSettings() {
-        if (!ble.isReady) return
+        if (!ble.isReady || face.active) return
         val sync = SettingsStore.sync(this)
         val todo = sync.nextToSend()
         if (todo.isEmpty()) return
@@ -415,6 +437,10 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     /** Dünden beri adım, 1,5 sn sonra nabız, includeSleep ise 4 sn sonra uyku geçmişini ister. */
     fun requestHistory(includeSleep: Boolean) {
+        if (face.active) {
+            WatchHub.log("Kadran yükleniyor; geçmiş daha sonra okunacak.")
+            return
+        }
         if (!ble.isReady) {
             WatchHub.log("Saat hazır değil; geçmiş okunmadı.")
             return
@@ -450,6 +476,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         WatchHub.deviceFound(device, name, rssi)
 
     override fun onRawFrame(value: ByteArray) {
+        face.onRaw(value)
         if (HealthStore.add(this, value)) WatchHub.healthChanged()
     }
 
@@ -491,6 +518,7 @@ class WatchService : Service(), Ls05Ble.Listener {
     }
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {
+        face.onDisconnected()
         val sync = SettingsStore.sync(this)
         if (sync.onDisconnect().isNotEmpty()) {
             SettingsStore.save(this)

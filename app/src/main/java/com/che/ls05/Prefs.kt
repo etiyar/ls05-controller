@@ -87,6 +87,10 @@ object Prefs {
     fun reminderSentDay(c: Context, slot: Int): String = p(c).getString("reminderDay$slot", "") ?: ""
     fun setReminderSentDay(c: Context, slot: Int, day: String) = p(c).edit().putString("reminderDay$slot", day).apply()
 
+    /** Saate en son başarıyla yüklenen kadranın kimliği (Kadranlarım). */
+    fun currentFace(c: Context): String = p(c).getString("currentFace", "") ?: ""
+    fun setCurrentFace(c: Context, id: String) = p(c).edit().putString("currentFace", id).apply()
+
     // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
     // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.
 }

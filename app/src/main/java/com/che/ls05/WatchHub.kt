@@ -34,6 +34,9 @@ object WatchHub {
 
         /** Sağlık kayıtları değişti (en çok 300 ms'de bir). */
         fun onHealthChanged() {}
+
+        /** Kadran yükleme durumu ya da ilerlemesi değişti. */
+        fun onFaceChanged() {}
     }
 
     /** Saate gidecek şeyin türü. */
@@ -112,6 +115,25 @@ object WatchHub {
 
     fun deviceFound(device: BluetoothDevice, name: String, rssi: Int) = onMain {
         observers.toList().forEach { it.onDeviceFound(device, name, rssi) }
+    }
+
+    /** Kadran yükleme durumu (Ayarlar > Kadran gösterir). */
+    var facePhase = FaceUpload.Phase.IDLE
+        private set
+    var facePercent = 0
+        private set
+    var faceText = ""
+        private set
+    /** Yüklenen ya da en son yüklenen galeri kaydı. */
+    var faceId = ""
+    val faceBusy: Boolean
+        get() = facePhase != FaceUpload.Phase.IDLE && facePhase != FaceUpload.Phase.DONE && facePhase != FaceUpload.Phase.FAILED
+
+    fun setFace(p: FaceUpload.Phase, percent: Int, text: String) = onMain {
+        facePhase = p
+        facePercent = percent
+        faceText = text
+        observers.toList().forEach { it.onFaceChanged() }
     }
 
     /** Saatin son bildirdiği pil yüzdesi; bilinmiyorsa null. */

@@ -59,6 +59,16 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     private var gatt: BluetoothGatt? = null
     private var batteryChar: BluetoothGattCharacteristic? = null
 
+    /** Kadran veri kanalı (61FF/6101, kayıtta handle 0x28). */
+    private var faceChar: BluetoothGattCharacteristic? = null
+
+    /** Anlaşılan ATT MTU. Kadran paketi en çok MTU-3 bayt olabilir. */
+    var mtu = 23
+        private set
+
+    /** Kadran aktarımı sırasında 26 03 xx onaylarını loglama. */
+    var quietFace = false
+
     /** Aday komut kanalı: yazma karakteristiği ve adı. */
     private class Channel(val name: String, val write: BluetoothGattCharacteristic)
 
@@ -91,7 +101,9 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             val data: ByteArray,
             override val label: String,
             val gapAfterMs: Long = 0,
+            val quiet: Boolean = false,
         ) : Op()
+        class Mtu(val size: Int, override val label: String) : Op()
         class EnableNotify(val ch: BluetoothGattCharacteristic, override val label: String) : Op()
         class Read(val ch: BluetoothGattCharacteristic, override val label: String) : Op()
     }
@@ -225,6 +237,14 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             }
         }
 
+        override fun onMtuChanged(g: BluetoothGatt, size: Int, statusCode: Int) {
+            main.post {
+                if (statusCode == BluetoothGatt.GATT_SUCCESS) mtu = size
+                log("   MTU ${if (statusCode == BluetoothGatt.GATT_SUCCESS) "= $size" else "isteği başarısız (status=$statusCode), $mtu kaldı"}")
+                if (current is Op.Mtu) opDone()
+            }
+        }
+
         override fun onServicesDiscovered(g: BluetoothGatt, statusCode: Int) {
             main.post { handleServices(g, statusCode) }
         }
@@ -246,7 +266,9 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             main.post {
                 val op = current
                 if (statusCode == BluetoothGatt.GATT_SUCCESS) {
-                    log("   yazma tamam (${shortUuid(ch.uuid)}, status=0)${if (op is Op.Write) " ${op.label}" else ""}")
+                    if (!(op is Op.Write && op.quiet)) {
+                        log("   yazma tamam (${shortUuid(ch.uuid)}, status=0)${if (op is Op.Write) " ${op.label}" else ""}")
+                    }
                 } else {
                     log("   YAZMA HATASI (${shortUuid(ch.uuid)}, status=$statusCode)")
                 }
@@ -311,6 +333,9 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             ch(UteUuids.ALT_NOTIFY_SERVICE, UteUuids.ALT_NOTIFY_1),
             ch(UteUuids.ALT_NOTIFY_SERVICE, UteUuids.ALT_NOTIFY_2),
         ).filter { it.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 }
+
+        faceChar = ch(UteUuids.ALT_NOTIFY_SERVICE, UteUuids.ALT_NOTIFY_1)
+            ?.takeIf { it.properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0 }
 
         configReads = listOfNotNull(
             ch(UteUuids.CMD_A_SERVICE, UteUuids.CMD_A_WRITE),
@@ -430,6 +455,10 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             listener.onFrame(frame)
             return
         }
+        if (quietFace && value.isNotEmpty() && value[0] == 0x26.toByte()) {
+            listener.onFrame(frame)
+            return
+        }
         log("<- ${shortUuid(ch.uuid)}: ${rawText(frame, value)}")
         if (frame is UteFrame.AuthStatus && active == null) handleAuth(frame.code)
         when (frame) {
@@ -483,6 +512,25 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     fun sendCommand(data: ByteArray, label: String) {
         val c = active ?: run { log("Hazır değil, gönderilmedi: $label"); return }
         enqueue(Op.Write(c.write, data, label))
+    }
+
+    // ---------- Kadran ----------
+
+    val canSendFace: Boolean get() = faceChar != null
+
+    /** Kuyrukta bekleyen işlem sayısı (kadran blokları arasında boşalmasını beklemek için). */
+    val pendingOps: Int get() = queue.size + (if (current != null) 1 else 0)
+
+    fun requestMtu(size: Int) = enqueue(Op.Mtu(size, "MTU $size"))
+
+    /** Kadran paketlerini sırayla yanıtsız yazar; her 10 yazmada 30 ms bekler (Haylou Fun gibi). */
+    fun sendFacePackets(packets: List<ByteArray>, from: Int, to: Int): Boolean {
+        val c = faceChar ?: return false
+        for (i in from until to) {
+            val gap = if ((i - from + 1) % 10 == 0) 30L else 0L
+            enqueue(Op.Write(c, packets[i], "kadran ${i + 1}", gapAfterMs = gap, quiet = true))
+        }
+        return true
     }
 
     fun readStandardBattery() {
@@ -555,8 +603,12 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         val serial = ++opSerial
         val ok = when (op) {
             is Op.Write -> {
-                log("-> ${shortUuid(op.target.uuid)}: ${Hex.redacted(op.data)}  (${op.label})")
+                if (!op.quiet) log("-> ${shortUuid(op.target.uuid)}: ${Hex.redacted(op.data)}  (${op.label})")
                 write(g, op.target, op.data)
+            }
+            is Op.Mtu -> {
+                log("-> MTU isteği ${op.size}")
+                g.requestMtu(op.size)
             }
             is Op.EnableNotify -> {
                 val d = op.ch.getDescriptor(UUID.fromString(UteUuids.CCCD))

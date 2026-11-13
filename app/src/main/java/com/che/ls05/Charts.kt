@@ -254,3 +254,73 @@ class SparkView(context: Context) : View(context) {
         canvas.drawPath(path, line)
     }
 }
+
+/**
+ * Yuvarlak kadran önizlemesi. Resim daireye kırpılır; çevresinde ince halka.
+ * selected: nane halka (saatteki kadran). Resim yoksa "+" çizilir (ekle kutusu).
+ */
+class FaceThumbView(context: Context) : View(context) {
+
+    private val density = resources.displayMetrics.density
+    private val img = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.getColor(R.color.raised) }
+    private val plus = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = context.getColor(R.color.accent)
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val matrix = android.graphics.Matrix()
+    private var bitmap: android.graphics.Bitmap? = null
+    private var selected = false
+    private var progress = -1
+
+    fun set(bmp: android.graphics.Bitmap?, isSelected: Boolean) {
+        bitmap = bmp
+        selected = isSelected
+        img.shader = bmp?.let { android.graphics.BitmapShader(it, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP) }
+        invalidate()
+    }
+
+    /** Yükleme sırasında halka ilerleme gösterir (0-100); -1 kapalı. */
+    fun setProgress(p: Int) {
+        progress = p
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val size = minOf(width, height).toFloat()
+        if (size <= 0f) return
+        val cx = width / 2f
+        val cy = height / 2f
+        val stroke = (if (selected || progress >= 0) 2.5f else 1f) * density
+        val gap = 3f * density
+        val r = size / 2f - stroke - gap
+        val b = bitmap
+        if (b != null) {
+            val scale = (2f * r) / b.width
+            matrix.setScale(scale, scale)
+            matrix.postTranslate(cx - r, cy - r)
+            img.shader?.setLocalMatrix(matrix)
+            canvas.drawCircle(cx, cy, r, img)
+        } else {
+            canvas.drawCircle(cx, cy, r, fill)
+            val arm = r * 0.32f
+            plus.strokeWidth = 2.5f * density
+            canvas.drawLine(cx - arm, cy, cx + arm, cy, plus)
+            canvas.drawLine(cx, cy - arm, cx, cy + arm, plus)
+        }
+        ring.strokeWidth = stroke
+        val rr = size / 2f - stroke / 2f
+        if (progress >= 0) {
+            ring.color = context.getColor(R.color.raised)
+            canvas.drawCircle(cx, cy, rr, ring)
+            ring.color = context.getColor(R.color.accent)
+            ring.strokeCap = Paint.Cap.ROUND
+            canvas.drawArc(cx - rr, cy - rr, cx + rr, cy + rr, -90f, 360f * progress / 100f, false, ring)
+        } else {
+            ring.color = context.getColor(if (selected) R.color.accent else R.color.border)
+            canvas.drawCircle(cx, cy, rr, ring)
+        }
+    }
+}

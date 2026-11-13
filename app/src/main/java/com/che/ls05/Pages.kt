@@ -342,6 +342,11 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     private val alarms = ArrayList<SettingViews>()
     private val dnd: SettingViews
 
+    // Kadranlarım
+    private val faceRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
+    private val faceStatus: TextView = ui.caption("")
+    private val faceThumbs = HashMap<String, FaceThumbView>()
+
     // Alarm notu var ama tam zamanlı alarm izni yoksa uyarı.
     private val exactBanner: Banner = ui.banner(
         "Tam zamanlı alarm izni yok. Alarm notu gecikebilir veya gönderilemeyebilir.",
@@ -409,6 +414,20 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         }, topDp = 8)
         ui.add(pair, find, width = 0, height = Ui.MATCH, weight = 1f, leftDp = 10)
         ui.add(body, pair, topDp = 10)
+
+        // Kadranlarım: yuvarlak önizlemeler, saatteki nane halkalı, sonda ekle.
+        ui.add(body, ui.section("Kadranlarım"), topDp = 20)
+        val faces = ui.card(padDp = 0, padVDp = 14)
+        val scroll = android.widget.HorizontalScrollView(act)
+        scroll.isHorizontalScrollBarEnabled = false
+        scroll.clipToPadding = false
+        scroll.setPadding(ui.dp(10), 0, ui.dp(10), 0)
+        scroll.addView(faceRow)
+        ui.add(faces, scroll)
+        faceStatus.visibility = View.GONE
+        faceStatus.setPadding(ui.dp(16), 0, ui.dp(16), 0)
+        ui.add(faces, faceStatus, topDp = 10)
+        ui.add(body, faces, topDp = 8)
 
         // Ekran ve profil
         ui.add(body, ui.section("Ekran ve profil"), topDp = 20)
@@ -497,6 +516,127 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         exactBanner.view.visibility =
             if (Reminders.anyActive(act) && !Reminders.canExact(act)) View.VISIBLE else View.GONE
         refreshProfile()
+        refreshFaces()
+    }
+
+    // ---------- Kadranlarım ----------
+
+    private fun faceTile(label: String, thumb: FaceThumbView, onClick: () -> Unit): LinearLayout {
+        val col = ui.vertical()
+        col.gravity = Gravity.CENTER_HORIZONTAL
+        col.background = ui.pressable(16)
+        col.setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4))
+        col.setOnClickListener { onClick() }
+        col.addView(thumb, LinearLayout.LayoutParams(ui.dp(76), ui.dp(76)))
+        val t = ui.text(label, 12f, R.color.text2)
+        t.gravity = Gravity.CENTER
+        t.maxLines = 2
+        t.ellipsize = android.text.TextUtils.TruncateAt.END
+        val lp = LinearLayout.LayoutParams(ui.dp(80), LinearLayout.LayoutParams.WRAP_CONTENT)
+        lp.topMargin = ui.dp(6)
+        col.addView(t, lp)
+        col.contentDescription = label
+        return col
+    }
+
+    /** Galeriyi yeniden kurar (ekleme, silme, yükleme sonrası). */
+    fun refreshFaces() {
+        faceRow.removeAllViews()
+        faceThumbs.clear()
+        val current = Prefs.currentFace(act)
+        for (e in FaceLibrary.list(act)) {
+            val th = FaceThumbView(act)
+            th.set(FaceLibrary.preview(e), e.id == current)
+            faceThumbs[e.id] = th
+            val label = if (e.id == current) "${e.name}\nSaatte" else e.name
+            faceRow.addView(faceTile(label, th) { openFace(e) })
+        }
+        val add = FaceThumbView(act)
+        add.set(null, false)
+        faceRow.addView(faceTile("Ekle", add) { act.pickFace() })
+        refreshFaceProgress()
+    }
+
+    /** Yükleme ilerlemesi: ilgili önizlemenin halkası ve alttaki durum satırı. */
+    fun refreshFaceProgress() {
+        val busy = WatchHub.faceBusy
+        val id = WatchHub.faceId
+        faceThumbs.forEach { (k, v) -> v.setProgress(if (busy && k == id) WatchHub.facePercent else -1) }
+        val text = WatchHub.faceText
+        faceStatus.text = text
+        faceStatus.setTextColor(ui.color(if (WatchHub.facePhase == FaceUpload.Phase.FAILED) R.color.warning else R.color.text2))
+        faceStatus.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun openFace(e: FaceLibrary.Entry) {
+        val f = FaceLibrary.load(e)
+        val box = ui.vertical()
+        box.gravity = Gravity.CENTER_HORIZONTAL
+        box.setPadding(ui.dp(24), ui.dp(20), ui.dp(24), ui.dp(4))
+        val big = FaceThumbView(act)
+        val onWatch = Prefs.currentFace(act) == e.id
+        big.set(FaceLibrary.preview(e), onWatch)
+        box.addView(big, LinearLayout.LayoutParams(ui.dp(200), ui.dp(200)))
+        val name = ui.text(e.name, 18f, R.color.text, bold = true)
+        name.gravity = Gravity.CENTER
+        ui.add(box, name, topDp = 14)
+        val info = buildString {
+            append("${e.sizeKb} KB")
+            if (f != null) append(" · ${f.elements.size} öğe")
+            if (onWatch) append(" · Saatte şu an")
+        }
+        val cap = ui.caption(if (f == null) "Dosya okunamadı." else info)
+        cap.gravity = Gravity.CENTER
+        ui.add(box, cap, topDp = 4)
+
+        val d = AlertDialog.Builder(act)
+            .setView(box)
+            .setPositiveButton("Saate yükle", null)
+            .setNeutralButton("Sil", null)
+            .setNegativeButton("Kapat", null)
+            .create()
+        d.setOnShowListener {
+            val up = d.getButton(AlertDialog.BUTTON_POSITIVE)
+            up.isEnabled = f != null && WatchHub.ready && !WatchHub.faceBusy
+            up.setOnClickListener {
+                d.dismiss()
+                if (f != null) confirmUpload(e, f)
+            }
+            d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                if (WatchHub.faceBusy && WatchHub.faceId == e.id) {
+                    act.toast("Bu kadran şu an yükleniyor.")
+                    return@setOnClickListener
+                }
+                d.dismiss()
+                AlertDialog.Builder(act)
+                    .setMessage("\"${e.name}\" galeriden silinsin mi? Saatteki kadran değişmez.")
+                    .setPositiveButton("Sil") { _, _ ->
+                        FaceLibrary.delete(act, e.id)
+                        refreshFaces()
+                    }
+                    .setNegativeButton("Vazgeç", null)
+                    .show()
+            }
+        }
+        d.show()
+    }
+
+    private fun confirmUpload(e: FaceLibrary.Entry, f: com.che.ls05.protocol.FaceFile) {
+        AlertDialog.Builder(act)
+            .setTitle("Saate yüklensin mi?")
+            .setMessage(
+                "Yükleme 1-2 dakika sürer. Bu sürede saati telefona yakın tut ve uygulamayı açık bırak; " +
+                    "ekran açık kalır. Bildirimler bekletilir, sonra gönderilir.\n\n" +
+                    "Saat pili en az %${FaceUpload.MIN_BATTERY} olmalı. Yükleme yarıda kesilirse saatin eski kadranda " +
+                    "kalması beklenir; bu henüz denenmedi.",
+            )
+            .setPositiveButton("Yükle") { _, _ ->
+                val s = act.readyService() ?: return@setPositiveButton
+                val err = s.startFace(f, e.id)
+                if (err != null) act.toast(err)
+            }
+            .setNegativeButton("Vazgeç", null)
+            .show()
     }
 
     // ---------- Ekran ve profil ----------

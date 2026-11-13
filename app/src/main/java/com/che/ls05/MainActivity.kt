@@ -40,6 +40,7 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     companion object {
         private const val KEY_TAB = "tab"
+        private const val REQ_FACE = 41
     }
 
     lateinit var ui: Ui
@@ -237,6 +238,10 @@ class MainActivity : Activity(), WatchHub.Observer {
     /** Saat hazırsa servis; değilse Toast ve null. */
     fun readyService(): WatchService? {
         val s = WatchHub.service
+        if (WatchHub.faceBusy) {
+            toast("Kadran yükleniyor; bitince tekrar dene.")
+            return null
+        }
         if (s == null || !s.isWatchReady()) {
             toast("Saat bağlı değil.")
             return null
@@ -381,6 +386,73 @@ class MainActivity : Activity(), WatchHub.Observer {
         watch.refresh()
         today.refresh()
         settings.refreshWatchInfo()
+    }
+
+    override fun onFaceChanged() {
+        if (WatchHub.faceBusy) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val p = WatchHub.facePhase
+        if (p == FaceUpload.Phase.DONE || p == FaceUpload.Phase.FAILED) watch.refreshFaces() else watch.refreshFaceProgress()
+    }
+
+    // ---------- Kadran dosyası seçme ----------
+
+    fun pickFace() {
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, REQ_FACE)
+        } catch (e: ActivityNotFoundException) {
+            toast("Dosya seçici açılamadı.")
+        }
+    }
+
+    @Deprecated("Framework Activity API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FACE || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        val bytes = try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                val buf = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(64 * 1024)
+                var total = 0
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    total += n
+                    if (total > com.che.ls05.protocol.FaceFile.MAX_SIZE) return@use null
+                    buf.write(chunk, 0, n)
+                }
+                buf.toByteArray()
+            }
+        } catch (e: Exception) {
+            null
+        }
+        if (bytes == null) {
+            toast("Dosya okunamadı ya da 2 MB'tan büyük.")
+            return
+        }
+        var name = "Kadran"
+        try {
+            contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) name = c.getString(0)?.substringBeforeLast('.')?.replace('_', ' ') ?: name
+            }
+        } catch (_: Exception) {
+        }
+        FaceLibrary.add(this, bytes, name)
+            .onSuccess {
+                toast("Eklendi: ${it.name}")
+                watch.refreshFaces()
+            }
+            .onFailure {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Kadran eklenemedi")
+                    .setMessage(it.message ?: "Dosya kadran biçiminde değil.")
+                    .setPositiveButton("Tamam", null)
+                    .show()
+            }
     }
 
     override fun onHealthChanged() {
