@@ -297,3 +297,4 @@ Açık kalanlar:
 - Profil `05`: ilk kontrollü gönderim onaylandı, ekran süresi 10 sn saatte doğrulandı. GEÇTİ.
 - Kaydırıp kapatma sonrası WhatsApp bildirimi: GEÇTİ (1/1).
 - 80 karakter: saatte yaklaşık 78 karakter + "..." GEÇTİ. Not: noktasız "ı" saat yazı tipinde boşluklu görünüyor (saat yazılımı); isteğe bağlı harf sadeleştirme ileride.
+- 13 Kasım 21:31: saatteki kırmızı düğme (12 02) arama bildirimindeki "Decline" eylemiyle aramayı reddetti, ardından 0D 04 ile saat sustu. GEÇTİ (v0.5.2). İzin gerekmedi.
