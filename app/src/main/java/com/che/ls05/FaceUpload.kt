@@ -63,11 +63,12 @@ class FaceUpload(private val ble: Ls05Ble, private val onEnd: () -> Unit) {
     }
 
     private fun askConfig() {
-        val packet = ble.mtu - 3
-        if (packet < 100) {
-            fail("MTU yükseltilemedi (${ble.mtu}). Yükleme başlamadı, saate veri gitmedi.")
+        // Kayıttaki gibi 244 baytlık paket (saat 0x28 okumasında 00 f4 = 244 bildiriyor). İlk sürümde başka boy denenmez.
+        if (ble.mtu < MTU) {
+            fail("Bağlantı 247 bayta yükseltilemedi (${ble.mtu}). Yükleme başlamadı, saate veri gitmedi.")
             return
         }
+        val packet = MTU - 3
         transfer = FaceTransfer(file!!.bytes, packet)
         report(Phase.CONFIG, 0, "Saat soruluyor…")
         ble.sendCommand(FaceTransfer.QUERY, "kadran yapılandırma (1a 01)")
