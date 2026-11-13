@@ -627,9 +627,9 @@ class Ui(val c: Context) {
             items.forEachIndexed { k, t ->
                 val on = k == sel
                 t.isSelected = on
-                t.setTextColor(color(if (on) R.color.text else R.color.text2))
+                t.setTextColor(color(if (on) R.color.accent else R.color.text2))
                 t.typeface = if (on) medium else regular
-                t.background = if (on) ripple(round(color(R.color.card), 12), null) else pressable(12)
+                t.background = if (on) ripple(round(color(R.color.accent_bg), 12), null) else pressable(12)
             }
         }
         labels.forEachIndexed { i, s ->

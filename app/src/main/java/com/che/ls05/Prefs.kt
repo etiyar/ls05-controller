@@ -26,7 +26,7 @@ object Prefs {
     fun vibrate(c: Context): Boolean = p(c).getBoolean("vibrate", true)
     fun setVibrate(c: Context, value: Boolean) = p(c).edit().putBoolean("vibrate", value).apply()
 
-    /** Varsayılan kapalı: önce elle "Saati eşitle" ile doğrulanır (kural 3). */
+    /** Varsayılan kapalı; saat eşitleme komutu cihazda doğrulandı, kullanıcı açar. */
     fun autoTime(c: Context): Boolean = p(c).getBoolean("autoTime", false)
     fun setAutoTime(c: Context, value: Boolean) = p(c).edit().putBoolean("autoTime", value).apply()
 
@@ -78,6 +78,14 @@ object Prefs {
     const val THEME_LIGHT = 2
     fun themeMode(c: Context): Int = p(c).getInt("themeMode", THEME_SYSTEM).coerceIn(THEME_SYSTEM, THEME_LIGHT)
     fun setThemeMode(c: Context, value: Int) = p(c).edit().putInt("themeMode", value).apply()
+
+    /** Alarm hatırlatma notu (en çok 40 karakter). Yalnızca telefonda; saate ve loga gitmez. */
+    fun alarmNote(c: Context, slot: Int): String = p(c).getString("alarmNote$slot", "") ?: ""
+    fun setAlarmNote(c: Context, slot: Int, value: String) = p(c).edit().putString("alarmNote$slot", value).apply()
+
+    /** Bu yuvanın notunun en son gönderildiği yerel gün (ör. 2026-11-14). Aynı gün tekrarını engeller. */
+    fun reminderSentDay(c: Context, slot: Int): String = p(c).getString("reminderDay$slot", "") ?: ""
+    fun setReminderSentDay(c: Context, slot: Int, day: String) = p(c).edit().putString("reminderDay$slot", day).apply()
 
     // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
     // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.

@@ -60,6 +60,8 @@ object WatchHub {
         val type: Int,
         val at: Long,
         val kind: NoteKind = NoteKind.MESSAGE,
+        /** Kuyrukta en çok ne kadar bekleyebilir (alarm notu için 5 dakika). */
+        val ttlMs: Long = PENDING_TTL_MS,
     )
 
     /** Çalan aramalar (bildirim anahtarına göre). Bildirim dinleyici ve servis ana iş parçacığında kullanır. */
@@ -191,12 +193,12 @@ object WatchHub {
         }
     }
 
-    /** Kuyrukta bekleyen ve 10 dakikadan eski olmayan bildirimleri sırayla verir. */
+    /** Kuyrukta bekleyen ve süresi dolmamış bildirimleri sırayla verir (varsayılan 10 dakika). */
     fun drainPending(now: Long = System.currentTimeMillis()): List<Note> {
-        val fresh = pending.filter { now - it.at <= PENDING_TTL_MS }
+        val fresh = pending.filter { now - it.at <= it.ttlMs }
         val dropped = pending.size - fresh.size
         pending.clear()
-        if (dropped > 0) log("Kuyruktaki $dropped eski bildirim atıldı (10 dakikadan eski).")
+        if (dropped > 0) log("Kuyruktaki $dropped eski bildirim atıldı (süresi doldu).")
         return fresh
     }
 }

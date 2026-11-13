@@ -49,6 +49,7 @@ object SettingsStore {
         sync(c).setDesired(key, value)
         save(c)
         WatchHub.service?.pushSettings()
+        if (key.startsWith("alarm")) Reminders.reschedule(c)
         WatchHub.settingsChanged()
     }
 

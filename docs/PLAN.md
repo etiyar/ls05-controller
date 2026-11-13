@@ -298,3 +298,12 @@ Açık kalanlar:
 - Kaydırıp kapatma sonrası WhatsApp bildirimi: GEÇTİ (1/1).
 - 80 karakter: saatte yaklaşık 78 karakter + "..." GEÇTİ. Not: noktasız "ı" saat yazı tipinde boşluklu görünüyor (saat yazılımı); isteğe bağlı harf sadeleştirme ileride.
 - 13 Kasım 21:31: saatteki kırmızı düğme (12 02) arama bildirimindeki "Decline" eylemiyle aramayı reddetti, ardından 0D 04 ile saat sustu. GEÇTİ (v0.5.2). İzin gerekmedi.
+
+### v0.6.1 (13 Kasım)
+- Alarm hatırlatma notu: en çok 40 karakter, yalnızca telefonda. Alarm anında saate sıradan bildirim (tip 4) olarak gider. Saatin alarmı bağımsız.
+  - Zamanlama: Android 13+ USE_EXACT_ALARM, 12-12L SCHEDULE_EXACT_ALARM. İzin yoksa setAndAllowWhileIdle ve "gecikebilir veya gönderilemeyebilir" uyarısı.
+  - Planlanan andan 5 dakika sonra gönderilmez; kuyrukta da 5 dakika bekler. Aynı yuva aynı gün bir kez. Tetiklenince ayar hâlâ aynı anı üretmiyorsa atılır.
+  - Yeniden zamanlama: açılış, güncelleme, saat ya da saat dilimi değişimi, izin değişimi, alarm ya da not değişimi, uygulama açılışı.
+  - Testler: V061Test (gün maskesi, hafta sonu atlama, yaz saati boşluğu, geçerlilik, 5 dakika). Cihaz testi bekliyor.
+- Uygulama listesi: iletimi açık ve son 3 uygulama üstte, gerisi "Tüm uygulamalar (N)" altında. Arama hepsini kapsar.
+- Saatlik adım sütunları daha görünür; tema seçicide seçili seçenek nane; eski "elle dene" açıklaması kalktı.

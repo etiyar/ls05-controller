@@ -24,6 +24,9 @@
 
     <!-- "Telefonu bul" titreşimi (normal izin, kullanıcıya sorulmaz) -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Alarm notu: Android 12-12L tam zamanlı alarm izni, 13+ alarm uygulaması izni. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Saatteki kırmızı düğmeyle aramayı reddetmek için (isteğe bağlı, kullanıcı açarsa istenir) -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
 
@@ -77,7 +80,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".ReminderReceiver"
+            android:exported="false" />
     </application>
 </manifest>

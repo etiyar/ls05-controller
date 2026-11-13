@@ -18,6 +18,7 @@ import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.che.ls05.protocol.AlarmReminder
 import com.che.ls05.protocol.AlarmSetting
 import com.che.ls05.protocol.DndSetting
 import com.che.ls05.protocol.HealthLog
@@ -273,6 +274,12 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     private val alarms = ArrayList<SettingViews>()
     private val dnd: SettingViews
 
+    // Alarm notu var ama tam zamanlı alarm izni yoksa uyarı.
+    private val exactBanner: Banner = ui.banner(
+        "Tam zamanlı alarm izni yok. Alarm notu gecikebilir veya gönderilemeyebilir.",
+        "İzin ver",
+    ) { requestExactAlarm() }
+
     // Ekran ve profil (05)
     private val screenRow: NavRow = ui.navRow(null, "Ekran açık kalma süresi", null, "") { editScreenTime() }
     private val wristRow: SwitchRow = ui.switchRow("Bileği kaldırınca aç", null, ProfileSetting.DEFAULT.raiseWrist) { on ->
@@ -296,6 +303,8 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
                 onRetry = { SettingsStore.retry(act, key) },
             )
         }
+        exactBanner.view.visibility = View.GONE
+        ui.add(body, exactBanner.view, topDp = 10)
 
         // Rahatsız etme ve saati bul yan yana, eşit yükseklikte.
         val pair = LinearLayout(act)
@@ -404,7 +413,8 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
             val v = alarms[slot - 1]
             v.main.text = Fmt.hm(a.hour, a.minute)
             v.main.setTextColor(ui.color(if (a.enabled) R.color.text else R.color.muted))
-            v.sub.text = UteAlarm.maskLabel(a.mask)
+            val note = Reminders.note(act, slot)
+            v.sub.text = if (note.isEmpty()) UteAlarm.maskLabel(a.mask) else "${UteAlarm.maskLabel(a.mask)} · $note"
             v.toggle.set(a.enabled)
             v.toggle.sw.contentDescription = "Alarm $slot"
             showStatus(v, e)
@@ -416,6 +426,8 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         dnd.toggle.set(d.enabled)
         dnd.toggle.sw.contentDescription = "Rahatsız etme"
         showStatus(dnd, e)
+        exactBanner.view.visibility =
+            if (Reminders.anyActive(act) && !Reminders.canExact(act)) View.VISIBLE else View.GONE
         refreshProfile()
     }
 
@@ -643,6 +655,19 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         val enabledBox = ui.check("Açık", cur.enabled)
         ui.add(box, enabledBox, topDp = 16)
 
+        ui.add(box, ui.cardTitle("Hatırlatma notu"), topDp = 16)
+        val noteField = ui.field("İsteğe bağlı, ör. Sabah ilacı")
+        noteField.filters = arrayOf(android.text.InputFilter.LengthFilter(AlarmReminder.MAX_NOTE))
+        noteField.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+        noteField.setText(Prefs.alarmNote(act, slot))
+        ui.add(box, noteField, topDp = 8)
+        val noteHelp = if (Reminders.canExact(act)) {
+            "Alarm çalınca not saate bildirim olarak gider. Yalnızca telefonda saklanır. Saat o an bağlı değilse 5 dakika beklenir."
+        } else {
+            "Tam zamanlı alarm izni yok: not gecikebilir veya gönderilemeyebilir. Yalnızca telefonda saklanır."
+        }
+        ui.add(box, ui.caption(noteHelp), topDp = 6)
+
         val dialog = AlertDialog.Builder(act)
             .setTitle("Alarm $slot")
             .setView(ui.scroll(box))
@@ -661,13 +686,31 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
                 } else {
                     // Kapalı alarmda gün seçilmediyse önceki günler korunur (boş maske geçersiz).
                     val finalMask = if (mask == 0) cur.mask else mask
-                    SettingsStore.set(act, key, AlarmSetting(on, hour, minute, finalMask).encode())
+                    // Not önce kaydedilir ki set() içindeki yeniden zamanlama yeni notu görsün.
+                    Prefs.setAlarmNote(act, slot, AlarmReminder.cleanNote(noteField.text.toString()))
+                    val value = AlarmSetting(on, hour, minute, finalMask).encode()
+                    if (value == SettingsStore.entry(act, key).desired) {
+                        // Yalnızca not değişti: saate komut gitmez.
+                        Reminders.reschedule(act)
+                        WatchHub.settingsChanged()
+                    } else {
+                        SettingsStore.set(act, key, value)
+                    }
                     dialog.dismiss()
                 }
             }
         }
         act.track(dialog)
         dialog.show()
+    }
+
+    /** Android 12 ve sonrasında tam zamanlı alarm izni ekranını açar. */
+    private fun requestExactAlarm() {
+        if (android.os.Build.VERSION.SDK_INT < 31) return
+        act.openSettings(
+            android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM)
+                .setData(android.net.Uri.parse("package:${act.packageName}")),
+        )
     }
 
     private fun editDnd() {
@@ -718,6 +761,10 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
 
 class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
 
+    private companion object {
+        const val RECENT_COUNT = 3
+    }
+
     /** Uygulama adı ve ikonu bir kez okunur. system: güncellenmemiş sistem uygulaması ya da bilgisi okunamayan paket. */
     private class AppInfo(val label: String, val icon: Drawable?, val system: Boolean)
 
@@ -764,7 +811,7 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
     private val search = ui.field("Uygulama ara")
     private val appBox: LinearLayout = ui.card(padDp = 16, padVDp = 6)
     private val infos = HashMap<String, AppInfo>()
-    private var systemOpen = false
+    private var restOpen = false
 
     private var notifState = NotificationState.IDLE
 
@@ -877,7 +924,8 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
 
     /**
      * Yalnızca uygulama kartını yeniden kurar; arama kutusunun odağı ve kaydırma konumu korunur.
-     * Sistem uygulamaları katlanır grupta durur; arama yapılırken grup açık gösterilir.
+     * Üstte iletimi açık ve son bildirim gönderen uygulamalar; gerisi "Tüm uygulamalar" altında katlanır.
+     * Arama yapılırken tüm uygulamalar düz liste olarak aranır.
      */
     private fun refreshApps() {
         appBox.removeAllViews()
@@ -900,17 +948,28 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
             ui.add(appBox, ui.space(), height = ui.dp(10))
             return
         }
-        val user = shown.filter { !it.info.system }
-        val system = shown.filter { it.info.system }
-        addAppRows(appBox, user)
-        if (system.isNotEmpty()) {
-            if (user.isNotEmpty()) ui.add(appBox, ui.divider(), height = ui.dp(1))
+        if (q.isNotEmpty()) {
+            // Arama: tüm uygulamalar düz liste.
+            addAppRows(appBox, shown)
+            return
+        }
+        // Varsayılan: iletimi açık uygulamalar ve son bildirim gönderen 3 uygulama. Gerisi katlanır.
+        val recent = shown.filter { it.last > 0L }.take(RECENT_COUNT).map { it.pkg }.toSet()
+        val top = shown.filter { Prefs.appEnabled(act, it.pkg) || it.pkg in recent }
+        val rest = shown.filter { it !in top }
+        addAppRows(appBox, top)
+        if (rest.isNotEmpty()) {
+            if (top.isNotEmpty()) ui.add(appBox, ui.divider(), height = ui.dp(1))
             val group = ui.collapsible(
-                "Sistem uygulamaları (${system.size})", null, null,
-                open = systemOpen || q.isNotEmpty(), inCard = false,
+                "Tüm uygulamalar (${rest.size})", null, null, open = restOpen, inCard = false,
             )
-            group.onToggle = { open -> systemOpen = open }
-            addAppRows(group.content, system)
+            group.onToggle = { open -> restOpen = open }
+            addAppRows(group.content, rest.filter { !it.info.system })
+            val system = rest.filter { it.info.system }
+            if (system.isNotEmpty()) {
+                ui.add(group.content, ui.caption("Sistem uygulamaları"), topDp = 12)
+                addAppRows(group.content, system)
+            }
             ui.add(appBox, group.view)
         }
     }
@@ -978,7 +1037,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
     private val deviceBox: LinearLayout = ui.vertical()
     private val autoTime: SwitchRow = ui.switchRow(
         "Bağlanınca saati eşitle",
-        "Önce Gelişmiş bölümündeki \"Saati eşitle\" ile elle dene.",
+        "Saat her bağlantıda telefonun saatine ayarlanır.",
         Prefs.autoTime(act),
     ) { Prefs.setAutoTime(act, it) }
     private val remote: SwitchRow = ui.switchRow(

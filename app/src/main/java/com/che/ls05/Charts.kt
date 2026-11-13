@@ -71,11 +71,12 @@ class RingView(context: Context) : View(context) {
     }
 }
 
-/** 24 saatlik sütun grafiği. İçinde bulunulan saat nane, diğerleri yükseltilmiş yüzey rengi. 0 değeri kısa bir çizgidir. */
+/** 24 saatlik sütun grafiği. İçinde bulunulan saat nane, adım olan diğer saatler soluk gri. 0 değeri kısa bir çizgidir. */
 class BarsView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
     private val bar = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val empty = Paint(Paint.ANTI_ALIAS_FLAG)
     private val now = Paint(Paint.ANTI_ALIAS_FLAG)
     private val label = Paint(Paint.ANTI_ALIAS_FLAG)
     private val box = RectF()
@@ -83,7 +84,9 @@ class BarsView(context: Context) : View(context) {
     private var current = -1
 
     init {
-        bar.color = context.getColor(R.color.raised)
+        bar.color = context.getColor(R.color.muted)
+        bar.alpha = 150
+        empty.color = context.getColor(R.color.raised)
         now.color = context.getColor(R.color.accent)
         label.color = context.getColor(R.color.muted)
         label.textAlign = Paint.Align.LEFT
@@ -114,7 +117,12 @@ class BarsView(context: Context) : View(context) {
             val h = maxOf(minH, chartH * values[i].toFloat() / max.toFloat())
             val left = slot * i + pad
             box.set(left, chartH - h, left + barW, chartH)
-            canvas.drawRoundRect(box, radius, radius, if (i == current) now else bar)
+            val p = when {
+                i == current -> now
+                values[i] > 0 -> bar
+                else -> empty
+            }
+            canvas.drawRoundRect(box, radius, radius, p)
         }
         var hour = 0
         while (hour < n) {

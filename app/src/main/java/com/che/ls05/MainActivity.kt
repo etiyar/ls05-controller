@@ -118,6 +118,7 @@ class MainActivity : Activity(), WatchHub.Observer {
         selectTab(tab)
         refreshTop()
         if (savedInstanceState == null && !hasBlePermissions()) requestBlePermissions()
+        if (savedInstanceState == null) Reminders.reschedule(applicationContext)
     }
 
     override fun onResume() {
