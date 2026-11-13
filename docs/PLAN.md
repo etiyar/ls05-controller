@@ -307,3 +307,24 @@ Açık kalanlar:
   - Testler: V061Test (gün maskesi, hafta sonu atlama, yaz saati boşluğu, geçerlilik, 5 dakika). Cihaz testi bekliyor.
 - Uygulama listesi: iletimi açık ve son 3 uygulama üstte, gerisi "Tüm uygulamalar (N)" altında. Arama hepsini kapsar.
 - Saatlik adım sütunları daha görünür; tema seçicide seçili seçenek nane; eski "elle dene" açıklaması kalktı.
+
+### Kadran 1. kapı (14 Kasım): dosya biçimi çözüldü
+
+Kaynak: 12 Kasım kaydındaki yükleme (2426 yazma) birebir yeniden kuruldu: 584.296 bayt. Ağ gerekmedi; Haylou sunucularına bu ortamdan erişilemiyor. Dosya üreticiye ait, repoya konmaz.
+
+Aktarım (Haylou Fun `SendPlateTask`, kayıtla birebir):
+- `1a 01` yapılandırma (yanıt `1a 01 ff ff ff ff 00 f0 00 f0 00 00`: 240x240).
+- `1a 02` başlat, saat `1a 02` ile hazır der.
+- Dosya 4096 baytlık bloklara, bloklar MTU-3 (241) baytlık parçalara bölünür. Her parça `61FF/6101` üzerine yanıtsız yazma: `1b [sıra hi] [sıra lo] + veri`. Sıra 0'dan dosya sonuna kadar artar. Her 10 yazmada 30 ms bekleme.
+- Her blok sonunda saat `26 03 04` (devam) der. `26 03 03 [hi] [lo]`: veri kopuk, o sıradan yeniden gönder. `26 03 02` ve diğerleri: hata, aktarım durur.
+- Bitiş: uygulama `1a 03 00`, saat `1a 03 00` ile başarı der. Haylou Fun 10 sn yanıtsızlıkta hata sayar.
+
+Dosya biçimi (doğrulandı):
+- 24 bayt başlık: `[kimlik u16 LE][00 00][veri boyu u32 LE = dosya-24][CRC32 u32 LE, 24. bayttan sona][en 240][boy 240][00 01][ff x6]`.
+- CRC32 standart zlib CRC'si, kayıttaki dosyada eşleşti. Saatin hata kodları (`26 03 02`, Haylou kodunda "INVALID CRC ERROR") saatin dosyayı doğruladığını gösteriyor. Kanıt değil, güçlü işaret.
+- 0x18'den itibaren 24 baytlık öğe tablosu, 0 türüyle biter: `[tür u16][en u16][konum u32][boy u16][x u16][y u16][00 00][kare sayısı u8][7 bayt, kopyalanır]`.
+- Görüntüler sıkıştırmasız RGB565, büyük uçlu (big-endian). Konum dosya başına göre.
+- Kayıttaki kadranın öğeleri: 1 akrep, 2 yelkovan, 3 saniye (240x240, saat döndürür), 10 önizleme, 17 arka plan, 13 gün rakamları (`-./0123456789:`, 14 kare), 15 gün adları (7 kare), 25 adım rakamları.
+
+Sonuç: özel kadran yapılabilir. En güvenli yol, bu dosyanın yapısını aynen koruyup yalnızca arka plan ve önizleme görüntüsünü değiştirmek ve CRC'yi yeniden hesaplamak.
+Sıradaki karar (kapı 2): kayıttaki resmi dosyayı bizim uygulamadan birebir yüklemek.
