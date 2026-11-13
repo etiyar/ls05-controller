@@ -5,12 +5,14 @@ import android.app.Activity
 import android.app.Dialog
 import android.app.NotificationManager
 import android.app.TimePickerDialog
+import android.app.UiModeManager
 import android.bluetooth.BluetoothDevice
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -28,8 +30,9 @@ import android.widget.Toast
 import com.che.ls05.protocol.UteFrame
 
 /**
- * v0.4 panel: üst şerit (bağlantı hapı), dört sekme (Bugün, Saat, Bildirimler, Ayarlar), alt çubuk.
- * Bağlantı servis tarafından tutulur; bu ekran kapansa da devam eder.
+ * v0.6 panel: sayfa başlığı ve bağlantı kapsülü, dört sekme (Bugün, Saat, Bildirimler, Ayarlar), yüzen alt menü.
+ * Üst uygulama çubuğu yoktur. Bağlantı servis tarafından tutulur; bu ekran kapansa ya da tema değişip
+ * yeniden kurulsa da devam eder.
  */
 class MainActivity : Activity(), WatchHub.Observer {
 
@@ -49,12 +52,61 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     private lateinit var titleView: TextView
     private lateinit var statusPill: TextView
-    private lateinit var bottomBar: LinearLayout
+    private lateinit var barWrap: LinearLayout
     private lateinit var pages: List<Page>
     private val tabs = ArrayList<TabItem>()
     private val dialogs = ArrayList<Dialog>()
     private var tab = 0
-    private var barPad = 0
+
+    /**
+     * Tema seçimi (API 26-30): kaynaklar seçilmeden önce gece bayrağı zorlanır.
+     * API 31 ve üstünde seçimi sistem saklar ve uygular (UiModeManager.setApplicationNightMode).
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(themedContext(newBase))
+    }
+
+    private fun themedContext(base: Context): Context {
+        if (Build.VERSION.SDK_INT >= 31) return base
+        val night = when (Prefs.themeMode(base)) {
+            Prefs.THEME_DARK -> Configuration.UI_MODE_NIGHT_YES
+            Prefs.THEME_LIGHT -> Configuration.UI_MODE_NIGHT_NO
+            else -> return base
+        }
+        val config = Configuration(base.resources.configuration)
+        config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or night
+        return base.createConfigurationContext(config)
+    }
+
+    /** Ayarlar'daki tema segmenti çağırır. Seçim hemen uygulanır; ekran yeniden kurulur, bağlantı etkilenmez. */
+    fun setThemeMode(mode: Int) {
+        if (mode == Prefs.themeMode(this)) return
+        Prefs.setThemeMode(this, mode)
+        if (Build.VERSION.SDK_INT >= 31) {
+            val night = when (mode) {
+                Prefs.THEME_DARK -> UiModeManager.MODE_NIGHT_YES
+                Prefs.THEME_LIGHT -> UiModeManager.MODE_NIGHT_NO
+                else -> UiModeManager.MODE_NIGHT_AUTO
+            }
+            getSystemService(UiModeManager::class.java).setApplicationNightMode(night)
+            // Görünen tema değişiyorsa sistem ekranı kendisi yeniden kurar. Kurmadıysa burada kurulur.
+            handler.postDelayed({
+                if (!isFinishing && !isDestroyed && themeMismatch(mode)) recreate()
+            }, 600L)
+        } else {
+            recreate()
+        }
+    }
+
+    private fun themeMismatch(mode: Int): Boolean {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        return when (mode) {
+            Prefs.THEME_DARK -> !night
+            Prefs.THEME_LIGHT -> night
+            else -> false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -209,16 +261,19 @@ class MainActivity : Activity(), WatchHub.Observer {
         val root = ui.vertical()
         root.setBackgroundColor(ui.color(R.color.bg))
 
+        // Sayfa başlığı + bağlantı kapsülü (her ekranda aynı).
         val top = ui.horizontal()
         top.minimumHeight = ui.dp(56)
-        top.setPadding(ui.dp(20), ui.dp(8), ui.dp(16), ui.dp(8))
-        titleView = ui.text("", 22f, R.color.text, bold = true)
+        top.setPadding(ui.dp(20), ui.dp(8), ui.dp(16), ui.dp(4))
+        titleView = ui.text("", 26f, R.color.text, bold = true)
+        titleView.includeFontPadding = false
         ui.add(top, titleView, width = Ui.WRAP)
+        // Kapsül kalan genişliğe sığar; uzun durum metni başlığı itmez, kendi içinde kısalır.
         val pillBox = ui.horizontal()
         pillBox.setGravity(Gravity.END or Gravity.CENTER_VERTICAL)
-        statusPill = ui.pill("", Tone.WARN)
+        statusPill = ui.pill("", Tone.NEUTRAL)
         ui.add(pillBox, statusPill, width = Ui.WRAP)
-        ui.add(top, pillBox, width = 0, weight = 1f, leftDp = 16)
+        ui.add(top, pillBox, width = 0, weight = 1f, leftDp = 12)
         ui.add(root, top)
 
         today = TodayPage(this)
@@ -230,17 +285,18 @@ class MainActivity : Activity(), WatchHub.Observer {
         pages.forEach { content.addView(it.root, FrameLayout.LayoutParams(Ui.MATCH, Ui.MATCH)) }
         ui.add(root, content, height = 0, weight = 1f)
 
-        bottomBar = ui.horizontal()
-        bottomBar.setBackgroundColor(ui.color(R.color.card))
-        barPad = ui.dp(4)
-        bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad)
+        // Alt menü: tek yüzey. İçerik menünün üstünde biter; menü sistem gezinme alanına girmez.
+        barWrap = ui.vertical()
+        val bar = ui.tabBar()
         val icons = intArrayOf(R.drawable.ic_today, R.drawable.ic_watch, R.drawable.ic_bell, R.drawable.ic_settings)
         pages.forEachIndexed { i, p ->
             val item = ui.tabItem(icons[i], p.title) { selectTab(i) }
             tabs += item
-            ui.add(bottomBar, item.view, width = 0, weight = 1f)
+            ui.add(bar, item.view, width = 0, weight = 1f)
         }
-        ui.add(root, bottomBar)
+        ui.add(barWrap, bar)
+        setBarInsets(0)
+        ui.add(root, barWrap)
 
         root.setOnApplyWindowInsetsListener { v, insets ->
             applyInsets(v, insets)
@@ -249,14 +305,19 @@ class MainActivity : Activity(), WatchHub.Observer {
         return root
     }
 
-    /** Sistem çubukları ve klavye için boşluk. Alt çubuğun zemini gezinme çubuğunun altına uzanır. */
+    private fun setBarInsets(bottom: Int) {
+        barWrap.setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8) + bottom)
+    }
+
+    /** Sistem çubukları ve klavye için boşluk. Klavye açıkken alt menü gizlenir (arama kutusuna yer kalsın). */
     private fun applyInsets(v: View, insets: WindowInsets) {
         if (Build.VERSION.SDK_INT >= 30) {
             val bars = insets.getInsets(WindowInsets.Type.systemBars())
             val all = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
             val imeOpen = all.bottom > bars.bottom
             v.setPadding(all.left, all.top, all.right, if (imeOpen) all.bottom else 0)
-            bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad + (if (imeOpen) 0 else bars.bottom))
+            barWrap.visibility = if (imeOpen) View.GONE else View.VISIBLE
+            setBarInsets(bars.bottom)
         } else {
             @Suppress("DEPRECATION")
             val left = insets.systemWindowInsetLeft
@@ -267,28 +328,27 @@ class MainActivity : Activity(), WatchHub.Observer {
             @Suppress("DEPRECATION")
             val bottom = insets.systemWindowInsetBottom
             v.setPadding(left, topInset, right, 0)
-            bottomBar.setPadding(ui.dp(8), barPad, ui.dp(8), barPad + bottom)
+            setBarInsets(bottom)
         }
     }
 
     fun selectTab(i: Int) {
         tab = i
         pages.forEachIndexed { k, p -> p.root.visibility = if (k == i) View.VISIBLE else View.GONE }
-        tabs.forEachIndexed { k, t ->
-            val c = ui.color(if (k == i) R.color.accent else R.color.text2)
-            t.label.setTextColor(c)
-            t.icon?.imageTintList = ColorStateList.valueOf(c)
-        }
+        tabs.forEachIndexed { k, t -> ui.setTab(t, k == i) }
         titleView.text = pages[i].title
         pages[i].refresh()
     }
 
+    /** Kapsül: bağlıyken nane ("Bağlı · %54"), bağlanırken nötr, bağlı değilken uyarı tonu. */
     private fun refreshTop() {
         if (WatchHub.ready) {
             val b = WatchHub.battery
-            ui.setPill(statusPill, if (b != null) "Bağlı · Pil %$b" else "Bağlı", Tone.OK)
+            ui.setPill(statusPill, if (b != null) "Bağlı · %$b" else "Bağlı", Tone.OK)
         } else {
-            ui.setPill(statusPill, WatchHub.status, Tone.WARN)
+            val s = WatchHub.status
+            val busy = s.endsWith("…") || s.startsWith("Saatte onay")
+            ui.setPill(statusPill, s, if (busy) Tone.NEUTRAL else Tone.WARN)
         }
     }
 

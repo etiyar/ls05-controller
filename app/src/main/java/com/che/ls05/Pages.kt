@@ -4,16 +4,18 @@ import android.app.AlertDialog
 import android.bluetooth.BluetoothDevice
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.pm.ApplicationInfo
+import android.graphics.drawable.Drawable
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.che.ls05.protocol.AlarmSetting
@@ -31,14 +33,17 @@ import com.che.ls05.protocol.UteFrame
 import com.che.ls05.protocol.UteProfile
 import java.time.LocalDateTime
 
-/** Bir sekme: kaydırılabilir dikey gövde. Görünümler bir kez kurulur, refresh yalnızca günceller. */
+/**
+ * Bir sekme: kaydırılabilir dikey gövde. Görünümler bir kez kurulur, refresh yalnızca günceller.
+ * Ekranlar yalnızca Ui.kt bileşenleriyle kurulur (şartname bölüm 5); kart arası 10 dp, yatay boşluk 16 dp.
+ */
 abstract class Page(val act: MainActivity, val title: String) {
     protected val ui: Ui = act.ui
     val body: LinearLayout = ui.vertical()
     val root: ScrollView = ui.scroll(body)
 
     init {
-        body.setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(24))
+        body.setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(16))
     }
 
     abstract fun refresh()
@@ -52,53 +57,98 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
 
     private fun dur(min: Int): String = if (min >= 60) "${min / 60} sa ${min % 60} dk" else "$min dk"
 
+    private fun durSpan(min: Int): CharSequence =
+        if (min >= 60) ui.valueSpan("${min / 60}", " sa ", "${min % 60}", " dk") else ui.valueSpan("$min", " dk")
+
     private val banner: Banner = ui.banner("", "Ayarlar") { act.selectTab(3) }
+
+    private val ring = RingView(act)
     private val stepNum: TextView = ui.big("")
     private val stepSub: TextView = ui.caption("")
-    private val stepBar: ProgressBar = ui.progress()
+
+    private val bars = BarsView(act)
+    private val barsEmpty: TextView = ui.caption("Henüz veri yok")
+
     private val heartNum: TextView = ui.big("")
-    private val heartUnit: TextView = ui.text("bpm", 15f, R.color.text2)
+    private val spark = SparkView(act)
     private val heartTime: TextView = ui.caption("")
     private val heartRange: TextView = ui.caption("")
-    private val syncText: TextView = ui.caption("")
+
     private val sleepNum: TextView = ui.big("")
-    private val sleepParts: TextView = ui.caption("")
+    private val sleepStrip = SleepStripView(act)
     private val sleepSpan: TextView = ui.caption("")
+    private val legend: LinearLayout = ui.card(padDp = 16, padVDp = 12)
+    private val deepText: TextView = ui.caption("")
+    private val lightText: TextView = ui.caption("")
+    private val awakeText: TextView = ui.caption("")
+
+    private val syncText: TextView = ui.caption("")
 
     init {
-        ui.add(body, banner.view, topDp = 8)
+        ui.add(body, banner.view, topDp = 4)
 
-        val steps = ui.card()
-        ui.add(steps, ui.cardTitle("Bugün adım"))
-        ui.add(steps, stepNum, topDp = 8)
-        ui.add(steps, stepSub, topDp = 8)
-        ui.add(steps, stepBar, topDp = 16, height = ui.dp(8))
-        ui.add(body, steps, topDp = 16)
+        // Büyük adım kartı: halka + toplam + hedef.
+        val steps = ui.card(big = true, padDp = 20)
+        val stepRow = ui.horizontal()
+        stepRow.addView(ring, LinearLayout.LayoutParams(ui.dp(96), ui.dp(96)))
+        val stepCol = ui.vertical()
+        ui.add(stepCol, ui.cardTitle("Adım"))
+        ui.add(stepCol, stepNum, topDp = 6)
+        ui.add(stepCol, stepSub, topDp = 6)
+        ui.add(stepRow, stepCol, width = 0, weight = 1f, leftDp = 20)
+        ui.add(steps, stepRow)
+        ui.add(body, steps, topDp = 10)
+
+        // Saatlik adım sütunları.
+        val hourly = ui.card()
+        ui.add(hourly, ui.cardTitle("Saatlik adım"))
+        ui.add(hourly, bars, topDp = 12, height = ui.dp(104))
+        ui.add(hourly, barsEmpty, topDp = 8)
+        ui.add(body, hourly, topDp = 10)
+
+        // Nabız ve uyku yan yana, eşit yükseklikte.
+        val pair = LinearLayout(act)
+        pair.orientation = LinearLayout.HORIZONTAL
 
         val heart = ui.card()
-        ui.add(heart, ui.cardTitle("Nabız"))
-        val line = LinearLayout(act)
-        line.orientation = LinearLayout.HORIZONTAL // varsayılan üst hizalama: taban çizgisi hizalanır
-        ui.add(line, heartNum, width = Ui.WRAP)
-        ui.add(line, heartUnit, width = Ui.WRAP, leftDp = 8)
-        ui.add(heart, line, topDp = 8)
+        ui.add(heart, ui.iconTitle(R.drawable.ic_heart, R.color.heart, "Nabız"))
+        ui.add(heart, heartNum, topDp = 10)
+        ui.add(heart, spark, topDp = 10, height = ui.dp(28))
         ui.add(heart, heartTime, topDp = 8)
-        ui.add(heart, heartRange, topDp = 4)
-        ui.add(body, heart, topDp = 16)
+        ui.add(heart, heartRange, topDp = 2)
+        ui.add(pair, heart, width = 0, height = Ui.MATCH, weight = 1f)
 
         val sleep = ui.card()
-        ui.add(sleep, ui.cardTitle("Uyku"))
-        ui.add(sleep, sleepNum, topDp = 8)
-        ui.add(sleep, sleepParts, topDp = 8)
-        ui.add(sleep, sleepSpan, topDp = 4)
-        ui.add(body, sleep, topDp = 16)
+        ui.add(sleep, ui.iconTitle(R.drawable.ic_moon, R.color.sleep_light, "Uyku"))
+        ui.add(sleep, sleepNum, topDp = 10)
+        ui.add(sleep, sleepStrip, topDp = 18, height = ui.dp(12))
+        ui.add(sleep, sleepSpan, topDp = 16)
+        ui.add(pair, sleep, width = 0, height = Ui.MATCH, weight = 1f, leftDp = 10)
+        ui.add(body, pair, topDp = 10)
 
-        val sync = ui.card()
+        // Evre açıklaması: uyku kartının hemen altında.
+        val legendRow = ui.horizontal()
+        legendItem(legendRow, R.color.sleep_deep, deepText, 0)
+        legendItem(legendRow, R.color.sleep_light, lightText, 12)
+        ui.add(legend, legendRow)
+        ui.add(legend, awakeText, topDp = 4)
+        ui.add(body, legend, topDp = 10)
+
+        val sync = ui.card(padDp = 16, padVDp = 10)
         val r = ui.horizontal()
         ui.add(r, syncText, width = 0, weight = 1f)
-        ui.add(r, ui.secondary("Verileri yenile") { requestData() }, width = Ui.WRAP, leftDp = 16)
+        ui.add(r, ui.secondary("Verileri yenile") { requestData() }, width = Ui.WRAP, leftDp = 12)
         ui.add(sync, r)
-        ui.add(body, sync, topDp = 16)
+        ui.add(body, sync, topDp = 10)
+    }
+
+    private fun legendItem(row: LinearLayout, colorId: Int, label: TextView, leftDp: Int) {
+        val item = ui.horizontal()
+        val lp = LinearLayout.LayoutParams(ui.dp(10), ui.dp(10))
+        lp.rightMargin = ui.dp(8)
+        item.addView(ui.dot(colorId), lp)
+        ui.add(item, label, width = 0, weight = 1f)
+        ui.add(row, item, width = 0, weight = 1f, leftDp = leftDp)
     }
 
     private fun requestData() {
@@ -119,55 +169,89 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         val now = LocalDateTime.now()
         val today = UteDate(now.year, now.monthValue, now.dayOfMonth)
         val view = HealthStore.view()
+        val last = Prefs.lastSync(act)
 
+        // Adım
         val goal = SettingsStore.profileDraft(act).stepGoal
         val steps = view.stepsForDay(today)
+        stepSub.text = "Hedef ${Fmt.num(goal)}"
         if (steps == null) {
             ui.setBig(stepNum, null, "Veri yok")
-            stepSub.text = "Hedef ${Fmt.num(goal)}"
-            stepBar.progress = 0
+            ring.set(0f, "")
+            ring.contentDescription = "Adım verisi yok"
         } else {
             ui.setBig(stepNum, Fmt.num(steps), "")
             val pct = if (goal > 0) (steps.toLong() * 100L / goal).toInt() else 0
-            stepSub.text = "Hedef ${Fmt.num(goal)} · %$pct"
-            stepBar.progress = pct.coerceIn(0, 100)
+            ring.set(pct / 100f, "%$pct")
+            ring.contentDescription = "Hedefin yüzde $pct kadarı"
         }
 
-        val hp = view.lastHeart(notAfter = now.plusMinutes(5))
+        // Saatlik adım: eşitleme yapıldıysa boş saat gerçek 0'dır; hiç eşitleme yoksa grafik çizilmez.
+        if (last == 0L) {
+            bars.visibility = View.GONE
+            barsEmpty.visibility = View.VISIBLE
+        } else {
+            bars.set(view.hourlySteps(today), now.hour)
+            bars.contentDescription = "Bugünün saatlik adım grafiği"
+            bars.visibility = View.VISIBLE
+            barsEmpty.visibility = View.GONE
+        }
+
+        // Nabız
+        val limit = now.plusMinutes(5)
+        val hp = view.lastHeart(notAfter = limit)
         if (hp == null) {
             ui.setBig(heartNum, null, "Ölçüm yok")
-            heartUnit.visibility = View.GONE
             heartTime.visibility = View.GONE
         } else {
-            ui.setBig(heartNum, hp.bpm.toString(), "")
-            heartUnit.visibility = View.VISIBLE
+            ui.setBig(heartNum, ui.valueSpan(hp.bpm.toString(), " bpm"), "")
             heartTime.text = "Ölçüm: ${Fmt.day(hp.at)}"
             heartTime.visibility = View.VISIBLE
+        }
+        val day = now.toLocalDate()
+        val curve = view.heartPoints()
+            .filter { it.at.toLocalDate() == day && !it.at.isAfter(limit) }
+            .map { (it.at.hour * 60 + it.at.minute) to it.bpm }
+        if (curve.size >= 2) {
+            spark.set(curve)
+            spark.visibility = View.VISIBLE
+        } else {
+            spark.visibility = View.GONE
         }
 
         val sum = view.heartSummary
         val valid = HealthLog.VALID_BPM
         if (sum != null && sum.date == today && sum.min in valid && sum.avg in valid && sum.max in valid) {
-            heartRange.text = "En düşük ${sum.min} · ortalama ${sum.avg} · en yüksek ${sum.max}"
+            heartRange.text = "Gün içi ${sum.min}-${sum.max} · ortalama ${sum.avg}"
             heartRange.visibility = View.VISIBLE
         } else {
             heartRange.visibility = View.GONE
         }
 
+        // Uyku
         val night = view.sleepFor(today)
         if (night == null || night.sleepMin <= 0) {
             ui.setBig(sleepNum, null, "Veri yok")
-            sleepParts.text = "Bu gecenin uykusu henüz okunmadı."
-            sleepSpan.visibility = View.GONE
+            sleepSpan.text = "Bu gecenin uykusu henüz okunmadı."
+            sleepStrip.visibility = View.GONE
+            legend.visibility = View.GONE
         } else {
-            ui.setBig(sleepNum, dur(night.sleepMin), "")
-            sleepParts.text = "Derin ${dur(night.deepMin)} · hafif ${dur(night.lightMin)}" +
-                if (night.awakeMin > 0) " · uyanık ${dur(night.awakeMin)}" else ""
+            ui.setBig(sleepNum, durSpan(night.sleepMin), "")
+            sleepStrip.set(view.sleepSegmentsFor(today))
+            sleepStrip.contentDescription = "Uyku evreleri şeridi"
+            sleepStrip.visibility = View.VISIBLE
             sleepSpan.text = "${Fmt.hm(night.start.hour, night.start.minute)} → ${Fmt.hm(night.end.hour, night.end.minute)}"
-            sleepSpan.visibility = View.VISIBLE
+            deepText.text = "Derin ${dur(night.deepMin)}"
+            lightText.text = "Hafif ${dur(night.lightMin)}"
+            if (night.awakeMin > 0) {
+                awakeText.text = "Uyanık ${dur(night.awakeMin)} (şeritte gri)"
+                awakeText.visibility = View.VISIBLE
+            } else {
+                awakeText.visibility = View.GONE
+            }
+            legend.visibility = View.VISIBLE
         }
 
-        val last = Prefs.lastSync(act)
         syncText.text = if (last == 0L) "Son eşitleme: henüz yok" else "Son eşitleme: ${Fmt.dayMs(last)}"
     }
 }
@@ -182,7 +266,7 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         val main: TextView,
         val sub: TextView,
         val toggle: Toggle,
-        val status: TextView,
+        val status: StatusLine,
         val retry: Button,
     )
 
@@ -190,85 +274,112 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     private val dnd: SettingViews
 
     // Ekran ve profil (05)
-    private val screenBtn: Button = ui.secondary("") { editScreenTime() }
-    private val wristRow: SwitchRow = ui.switchRow("Bileği kaldırınca ekran", null, ProfileSetting.DEFAULT.raiseWrist) { on ->
+    private val screenRow: NavRow = ui.navRow(null, "Ekran açık kalma süresi", null, "") { editScreenTime() }
+    private val wristRow: SwitchRow = ui.switchRow("Bileği kaldırınca aç", null, ProfileSetting.DEFAULT.raiseWrist) { on ->
         SettingsStore.setProfileDraft(act, SettingsStore.profileDraft(act).copy(raiseWrist = on))
     }
-    private val goalBtn: Button = ui.secondary("") { editGoal() }
-    private val profileState: TextView = ui.caption("")
-    private val profileStatus: TextView = ui.text("", 13f, R.color.text2)
-    private val profileSend: Button = ui.primary("Saate gönder") { sendProfileFirstTime() }
-    private val profileRetry: Button = ui.secondary("Yeniden gönder") { SettingsStore.retry(act, ProfileSetting.KEY) }
+    private val goalRow: NavRow = ui.navRow(null, "Adım hedefi", null, "") { editGoal() }
+    private val profileRow: NavRow = ui.navRow(null, "Profil", "", "Düzenle") { editProfile() }
+    private val profileStatus: StatusLine = ui.statusLine()
+    private val profileSend: Button = ui.tonal("Saate gönder") { sendProfileFirstTime() }
+    private val profileRetry: Button = ui.tonal("Yeniden gönder") { SettingsStore.retry(act, ProfileSetting.KEY) }
 
     init {
-        ui.add(body, ui.section("Alarmlar"))
+        // Alarmlar: üç sabit yuva. Yoğunluk kuralı: saat 28 sp, kart içi 14 dp, kart arası 10 dp.
+        ui.add(body, ui.section("Alarmlar"), topDp = 8)
         for (slot in 1..UteAlarm.SLOTS) {
             val key = AlarmSetting.key(slot)
-            alarms += settingCard(
-                sizeSp = 30f,
+            alarms += alarmCard(
+                top = if (slot == 1) 8 else 10,
                 onEdit = { editAlarm(slot) },
                 onToggle = { on -> toggleAlarm(slot, on) },
                 onRetry = { SettingsStore.retry(act, key) },
             )
         }
 
-        ui.add(body, ui.section("Rahatsız etme"))
-        dnd = settingCard(
-            sizeSp = 26f,
-            onEdit = { editDnd() },
-            onToggle = { on -> toggleDnd(on) },
-            onRetry = { SettingsStore.retry(act, DndSetting.KEY) },
-        )
-        dnd.sub.visibility = View.GONE
+        // Rahatsız etme ve saati bul yan yana, eşit yükseklikte.
+        val pair = LinearLayout(act)
+        pair.orientation = LinearLayout.HORIZONTAL
 
-        ui.add(body, ui.section("Ekran ve profil"))
-        val disp = ui.card()
-        ui.add(disp, ui.row("Ekran açık kalma süresi", trailing = screenBtn))
+        val dndCard = ui.card({ editDnd() }, padDp = 14)
+        val dndTop = ui.horizontal()
+        ui.icon(R.drawable.ic_moon, R.color.text2)?.let { dndTop.addView(it, LinearLayout.LayoutParams(ui.dp(24), ui.dp(24))) }
+        ui.add(dndTop, ui.space(), width = 0, height = ui.dp(1), weight = 1f)
+        val dndToggle = ui.toggle(false) { on -> toggleDnd(on) }
+        ui.add(dndTop, dndToggle.sw, width = Ui.WRAP)
+        ui.add(dndCard, dndTop)
+        ui.add(dndCard, ui.cardTitle("Rahatsız etme"), topDp = 6)
+        val dndMain = ui.text("", 18f, R.color.text, bold = true)
+        ui.add(dndCard, dndMain, topDp = 2)
+        val dndStatus = ui.statusLine()
+        ui.add(dndCard, dndStatus.view, topDp = 6)
+        val dndRetry = ui.tonal("Yeniden gönder") { SettingsStore.retry(act, DndSetting.KEY) }
+        dndRetry.visibility = View.GONE
+        ui.add(dndCard, dndRetry, topDp = 8)
+        dnd = SettingViews(dndMain, ui.caption(""), dndToggle, dndStatus, dndRetry)
+        ui.add(pair, dndCard, width = 0, height = Ui.MATCH, weight = 1f)
+
+        val find = ui.card(padDp = 14)
+        val findTop = ui.horizontal()
+        findTop.minimumHeight = ui.dp(48)
+        ui.icon(R.drawable.ic_vibrate, R.color.text2)?.let { findTop.addView(it, LinearLayout.LayoutParams(ui.dp(24), ui.dp(24))) }
+        ui.add(find, findTop)
+        ui.add(find, ui.cardTitle("Saati bul"), topDp = 6)
+        ui.add(find, ui.caption("Saat kısa bir süre titrer."), topDp = 2)
+        ui.add(find, ui.space(), height = 0, weight = 1f)
+        ui.add(find, ui.tonal("Titret") {
+            act.readyService()?.command(UteCommand.VIBRATE_TEXT, "saati bul (06)")
+        }, topDp = 8)
+        ui.add(pair, find, width = 0, height = Ui.MATCH, weight = 1f, leftDp = 10)
+        ui.add(body, pair, topDp = 10)
+
+        // Ekran ve profil
+        ui.add(body, ui.section("Ekran ve profil"), topDp = 20)
+        val disp = ui.card(padDp = 16, padVDp = 6)
+        ui.add(disp, screenRow.view)
         ui.add(disp, ui.divider(), height = ui.dp(1))
         ui.add(disp, wristRow.view)
         ui.add(disp, ui.divider(), height = ui.dp(1))
-        ui.add(disp, ui.row("Adım hedefi", trailing = goalBtn))
+        ui.add(disp, goalRow.view)
         ui.add(disp, ui.divider(), height = ui.dp(1))
-        ui.add(disp, ui.row("Profil", trailing = ui.secondary("Düzenle") { editProfile() }))
-        ui.add(disp, profileState)
-        ui.add(disp, profileStatus, topDp = 8)
-        ui.add(disp, profileSend, topDp = 8, width = Ui.WRAP)
+        ui.add(disp, profileRow.view)
+        ui.add(disp, profileStatus.view, topDp = 4)
+        ui.add(disp, profileSend, topDp = 10, width = Ui.WRAP)
         profileRetry.visibility = View.GONE
-        ui.add(disp, profileRetry, topDp = 8, width = Ui.WRAP)
+        ui.add(disp, profileRetry, topDp = 10, width = Ui.WRAP)
+        ui.add(disp, ui.space(), height = ui.dp(10))
         ui.add(body, disp, topDp = 8)
-
-        ui.add(body, ui.section("Saati bul"))
-        val find = ui.card()
-        ui.add(find, ui.caption("Saat kısa bir süre titrer."))
-        ui.add(find, ui.secondary("Saati titret") {
-            act.readyService()?.command(UteCommand.VIBRATE_TEXT, "saati bul (06)")
-        }, topDp = 16, width = Ui.WRAP)
-        ui.add(body, find, topDp = 8)
     }
 
-    private fun settingCard(
-        sizeSp: Float,
+    /** Alarm kartı: ikon, saat, günler, durum satırı, anahtar. Karta dokununca düzenleme açılır. */
+    private fun alarmCard(
+        top: Int,
         onEdit: () -> Unit,
         onToggle: (Boolean) -> Unit,
         onRetry: () -> Unit,
     ): SettingViews {
-        val card = ui.card(onEdit)
-        val top = ui.horizontal()
+        val card = ui.card(onEdit, padDp = 14)
+        val row = ui.horizontal()
+        ui.icon(R.drawable.ic_alarm, R.color.text2)?.let {
+            val lp = LinearLayout.LayoutParams(ui.dp(24), ui.dp(24))
+            lp.rightMargin = ui.dp(14)
+            row.addView(it, lp)
+        }
         val left = ui.vertical()
-        val main = ui.big("", sizeSp)
+        val main = ui.big("", 28f)
         val sub = ui.caption("")
+        val status = ui.statusLine()
         ui.add(left, main)
-        ui.add(left, sub, topDp = 4)
-        ui.add(top, left, width = 0, weight = 1f)
+        ui.add(left, sub, topDp = 3)
+        ui.add(left, status.view, topDp = 4)
+        ui.add(row, left, width = 0, weight = 1f)
         val tg = ui.toggle(false, onToggle)
-        ui.add(top, tg.sw, width = Ui.WRAP, leftDp = 16)
-        ui.add(card, top)
-        val status = ui.text("", 13f, R.color.text2)
-        ui.add(card, status, topDp = 8)
-        val retry = ui.secondary("Yeniden gönder", onRetry)
+        ui.add(row, tg.sw, width = Ui.WRAP, leftDp = 12)
+        ui.add(card, row)
+        val retry = ui.tonal("Yeniden gönder", onRetry)
         retry.visibility = View.GONE
         ui.add(card, retry, topDp = 8, width = Ui.WRAP)
-        ui.add(body, card, topDp = 8)
+        ui.add(body, card, topDp = top)
         return SettingViews(main, sub, tg, status, retry)
     }
 
@@ -292,16 +403,18 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
             val a = AlarmSetting.decode(e.desired) ?: AlarmSetting.DEFAULT
             val v = alarms[slot - 1]
             v.main.text = Fmt.hm(a.hour, a.minute)
-            v.main.setTextColor(ui.color(if (a.enabled) R.color.text else R.color.text2))
+            v.main.setTextColor(ui.color(if (a.enabled) R.color.text else R.color.muted))
             v.sub.text = UteAlarm.maskLabel(a.mask)
             v.toggle.set(a.enabled)
+            v.toggle.sw.contentDescription = "Alarm $slot"
             showStatus(v, e)
         }
         val e = SettingsStore.entry(act, DndSetting.KEY)
         val d = DndSetting.decode(e.desired) ?: DndSetting.DEFAULT
         dnd.main.text = "${Fmt.hm(d.startHour, d.startMinute)} → ${Fmt.hm(d.endHour, d.endMinute)}"
-        dnd.main.setTextColor(ui.color(if (d.enabled) R.color.text else R.color.text2))
+        dnd.main.setTextColor(ui.color(if (d.enabled) R.color.text else R.color.muted))
         dnd.toggle.set(d.enabled)
+        dnd.toggle.sw.contentDescription = "Rahatsız etme"
         showStatus(dnd, e)
         refreshProfile()
     }
@@ -310,39 +423,32 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
 
     private fun refreshProfile() {
         val p = SettingsStore.profileDraft(act)
-        screenBtn.text = "${p.screenSec} sn"
+        screenRow.value.text = "${p.screenSec} sn"
         wristRow.toggle.set(p.raiseWrist)
-        goalBtn.text = Fmt.num(p.stepGoal)
-        profileState.text = if (p.personalComplete) "Boy, kilo, yaş ve cinsiyet girildi." else "Boy, kilo, yaş ve cinsiyet girilmedi."
+        goalRow.value.text = Fmt.num(p.stepGoal)
+        profileRow.subtitle.text =
+            if (p.personalComplete) "Boy, kilo, yaş ve cinsiyet girildi." else "Boy, kilo, yaş ve cinsiyet girilmedi."
 
         val e = SettingsStore.entry(act, ProfileSetting.KEY)
         val verified = Prefs.profileVerified(act)
         val phase = e.phase
         when {
-            !p.personalComplete -> {
-                profileStatus.text = "Profil girilmeden saate hiçbir şey gönderilmez."
-                profileStatus.setTextColor(ui.color(R.color.warn))
-            }
-            !verified && phase == SyncPhase.SENDING -> {
-                profileStatus.text = "Gönderiliyor…"
-                profileStatus.setTextColor(ui.color(R.color.text2))
-            }
-            !verified && phase == SyncPhase.NO_ACK -> {
-                profileStatus.text = "Onay gelmedi. Saatteki durum bilinmiyor."
-                profileStatus.setTextColor(ui.color(R.color.warn))
-            }
-            !verified -> {
-                profileStatus.text = "İlk gönderim elle yapılır: Saate gönder, sonra saatteki ekran süresini kontrol et."
-                profileStatus.setTextColor(ui.color(R.color.text2))
-            }
-            e.desired != null && e.desired != p.encode() && phase != SyncPhase.SENDING -> {
-                profileStatus.text = "Bağlanınca gönderilecek"
-                profileStatus.setTextColor(ui.color(R.color.warn))
-            }
+            !p.personalComplete ->
+                ui.setStatus(profileStatus, StatusKind.NO_ACK, "Profil girilmeden saate hiçbir şey gönderilmez.")
+            !verified && phase == SyncPhase.SENDING ->
+                ui.setStatus(profileStatus, StatusKind.SENDING, "Gönderiliyor…")
+            !verified && phase == SyncPhase.NO_ACK ->
+                ui.setStatus(profileStatus, StatusKind.NO_ACK, "Onay gelmedi. Saatteki durum bilinmiyor.")
+            !verified ->
+                ui.setStatus(
+                    profileStatus, StatusKind.IDLE,
+                    "İlk gönderim elle yapılır: Saate gönder, sonra saatteki ekran süresini kontrol et.",
+                )
+            e.desired != null && e.desired != p.encode() && phase != SyncPhase.SENDING ->
+                ui.setStatus(profileStatus, StatusKind.WAITING, "Bağlanınca gönderilecek")
             else -> {
-                val (text, colorId) = statusText(e)
-                profileStatus.text = text
-                profileStatus.setTextColor(ui.color(colorId))
+                val (kind, text) = statusText(e)
+                ui.setStatus(profileStatus, kind, text)
             }
         }
         profileSend.visibility = if (p.personalComplete && !verified) View.VISIBLE else View.GONE
@@ -410,7 +516,7 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     }
 
     /** Boy, kilo, yaş, cinsiyet. Değerler yalnızca telefonda saklanır, logda gösterilmez. */
-    private fun editProfile() {
+    fun editProfile() {
         val cur = SettingsStore.profileDraft(act)
         val box = ui.dialogBox()
         ui.add(box, ui.caption("Yalnızca telefonda saklanır, logda gösterilmez. Saate ekran ayarlarıyla aynı pakette gider."), topDp = 8)
@@ -480,23 +586,24 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     }
 
     private fun showStatus(v: SettingViews, e: SyncEntry) {
-        val (text, colorId) = statusText(e)
-        v.status.text = text
-        v.status.setTextColor(ui.color(colorId))
+        val (kind, text) = statusText(e)
+        ui.setStatus(v.status, kind, text)
         val phase = e.phase
         v.retry.visibility =
             if (phase == SyncPhase.NO_ACK || phase == SyncPhase.UNKNOWN) View.VISIBLE else View.GONE
     }
 
-    private fun statusText(e: SyncEntry): Pair<String, Int> = when (e.phase) {
-        SyncPhase.SENDING -> "Gönderiliyor…" to R.color.text2
+    /** Şartname bölüm 4: altı hal. Onayı gelmeyen komut başarısız sayılmaz; kırmızı kullanılmaz. */
+    private fun statusText(e: SyncEntry): Pair<StatusKind, String> = when (e.phase) {
+        SyncPhase.SENDING -> StatusKind.SENDING to "Gönderiliyor…"
         SyncPhase.CONFIRMED ->
-            (if (e.confirmedAt == 0L) "Saat onayladı" else "Saat onayladı · ${Fmt.dayMs(e.confirmedAt)}") to R.color.accent
+            StatusKind.CONFIRMED to
+                (if (e.confirmedAt == 0L) "Saat onayladı" else "Saat onayladı · ${Fmt.dayMs(e.confirmedAt)}")
         SyncPhase.PENDING ->
-            if (WatchHub.ready) "Gönderiliyor…" to R.color.text2 else "Bağlanınca gönderilecek" to R.color.warn
-        SyncPhase.NO_ACK -> "Onay gelmedi. Saatteki durum bilinmiyor." to R.color.warn
-        SyncPhase.UNKNOWN -> "Saat sıfırlanmış olabilir. Saatteki durum bilinmiyor." to R.color.warn
-        SyncPhase.IDLE -> "Henüz saate gönderilmedi" to R.color.text2
+            if (WatchHub.ready) StatusKind.SENDING to "Gönderiliyor…" else StatusKind.WAITING to "Bağlanınca gönderilecek"
+        SyncPhase.NO_ACK -> StatusKind.NO_ACK to "Onay gelmedi. Saatteki durum bilinmiyor."
+        SyncPhase.UNKNOWN -> StatusKind.UNKNOWN to "Saat sıfırlanmış olabilir."
+        SyncPhase.IDLE -> StatusKind.IDLE to "Henüz saate gönderilmedi"
     }
 
     private fun editAlarm(slot: Int) {
@@ -611,29 +718,36 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
 
 class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
 
+    /** Uygulama adı ve ikonu bir kez okunur. system: güncellenmemiş sistem uygulaması ya da bilgisi okunamayan paket. */
+    private class AppInfo(val label: String, val icon: Drawable?, val system: Boolean)
+
+    private class AppRow(val pkg: String, val info: AppInfo, val last: Long)
+
     private val accessBanner: Banner = ui.banner(
         "Bildirim erişimi kapalı. Bildirimler saate iletilemez.",
         "Aç",
     ) { act.openSettings(android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
 
-    private val forward: SwitchRow = ui.switchRow("Bildirimleri saate ilet", null, Prefs.forwardingEnabled(act)) {
-        Prefs.setForwardingEnabled(act, it)
-    }
-    private val vibrate: SwitchRow = ui.switchRow("Bildirimden sonra titret", null, Prefs.vibrate(act)) {
-        Prefs.setVibrate(act, it)
-    }
+    private val forward: SwitchRow = ui.switchRow(
+        "Bildirimleri saate ilet", null, Prefs.forwardingEnabled(act), iconRes = R.drawable.ic_bell,
+    ) { Prefs.setForwardingEnabled(act, it) }
     private val incomingCalls: SwitchRow = ui.switchRow(
         "Gelen aramalar",
         "Arayan saatte görünür, saat titrer; cevaplayınca ya da bitince susar.",
         Prefs.incomingCalls(act),
+        iconRes = R.drawable.ic_phone,
     ) { Prefs.setIncomingCalls(act, it) }
-    private val missedCalls: SwitchRow = ui.switchRow("Cevapsız aramalar", null, Prefs.missedCalls(act)) {
-        Prefs.setMissedCalls(act, it)
-    }
+    private val missedCalls: SwitchRow = ui.switchRow(
+        "Cevapsız aramalar", null, Prefs.missedCalls(act), iconRes = R.drawable.ic_phone_missed,
+    ) { Prefs.setMissedCalls(act, it) }
+    private val vibrate: SwitchRow = ui.switchRow(
+        "Bildirimden sonra titret", null, Prefs.vibrate(act), iconRes = R.drawable.ic_vibrate,
+    ) { Prefs.setVibrate(act, it) }
     private val rejectCalls: SwitchRow = ui.switchRow(
         "Saatten aramayı reddet",
         "Saatteki kırmızı düğme aramayı kapatır.",
         Prefs.rejectFromWatch(act),
+        iconRes = R.drawable.ic_phone_reject,
     ) { on ->
         Prefs.setRejectFromWatch(act, on)
         if (on && android.os.Build.VERSION.SDK_INT >= 28 &&
@@ -643,47 +757,42 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         }
     }
 
-    private val testButton: Button = ui.primary("Test bildirimi gönder") { sendTest("LS05TEST123", "LS05TEST123") }
+    private val testButton: Button = ui.tonal("Test bildirimi gönder") { sendTest("LS05TEST123", "LS05TEST123") }
     private val testState: TextView = ui.text("", 14f, R.color.text)
     private val confirmRow: LinearLayout = ui.horizontal()
 
     private val search = ui.field("Uygulama ara")
-    private val appBox: LinearLayout = ui.card()
-    private val labels = HashMap<String, String>()
+    private val appBox: LinearLayout = ui.card(padDp = 16, padVDp = 6)
+    private val infos = HashMap<String, AppInfo>()
+    private var systemOpen = false
 
     private var notifState = NotificationState.IDLE
 
     init {
-        ui.add(body, accessBanner.view, topDp = 8)
+        ui.add(body, accessBanner.view, topDp = 4)
 
-        val main = ui.card()
+        val main = ui.card(padDp = 16, padVDp = 6)
         ui.add(main, forward.view)
-        ui.add(main, ui.divider(), height = ui.dp(1))
-        ui.add(main, vibrate.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, incomingCalls.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, missedCalls.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
+        ui.add(main, vibrate.view)
+        ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, rejectCalls.view)
-        ui.add(body, main, topDp = 16)
+        ui.add(body, main, topDp = 10)
 
-        ui.add(body, ui.section("Test"))
-        val test = ui.card()
-        ui.add(test, ui.caption("Saate kısa bir deneme bildirimi gider. Sonra saatte görüp görmediğini işaretle."))
-        ui.add(test, testButton, topDp = 16)
-        testState.visibility = View.GONE
-        ui.add(test, testState, topDp = 16)
-        ui.add(confirmRow, ui.primary("Saatte gördüm") { setNotifState(NotificationState.DISPLAYED_CONFIRMED) },
-            width = 0, weight = 1f)
-        ui.add(confirmRow, ui.secondary("Görmedim") { setNotifState(NotificationState.NOT_DISPLAYED) },
-            width = 0, weight = 1f, leftDp = 8)
-        confirmRow.visibility = View.GONE
-        ui.add(test, confirmRow, topDp = 8)
-        ui.add(body, test, topDp = 8)
-
-        ui.add(body, ui.section("Uygulamalar"))
-        ui.add(body, search, topDp = 8)
+        // "Uygulamalar" + arama simgesi. Arama kutusu simgeye dokununca açılır.
+        val head = ui.horizontal()
+        ui.add(head, ui.section("Uygulamalar"), width = 0, weight = 1f)
+        head.addView(
+            ui.iconButton(R.drawable.ic_search, "Uygulama ara") { toggleSearch() },
+            LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)),
+        )
+        ui.add(body, head, topDp = 10)
+        search.visibility = View.GONE
+        ui.add(body, search, topDp = 4)
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -692,6 +801,22 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
             }
         })
         ui.add(body, appBox, topDp = 8)
+
+        // Test: en altta. Sonuç kullanıcıya sorulur.
+        ui.add(body, testButton, topDp = 16)
+        ui.add(
+            body,
+            ui.caption("Saate kısa bir deneme bildirimi gider. Sonra saatte görüp görmediğini işaretle."),
+            topDp = 8,
+        )
+        testState.visibility = View.GONE
+        ui.add(body, testState, topDp = 12)
+        ui.add(confirmRow, ui.secondary("Saatte gördüm") { setNotifState(NotificationState.DISPLAYED_CONFIRMED) },
+            width = 0, weight = 1f)
+        ui.add(confirmRow, ui.secondary("Görmedim") { setNotifState(NotificationState.NOT_DISPLAYED) },
+            width = 0, weight = 1f, leftDp = 8)
+        confirmRow.visibility = View.GONE
+        ui.add(body, confirmRow, topDp = 8)
     }
 
     override fun refresh() {
@@ -709,36 +834,84 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         ui.enable(testButton, ready)
     }
 
-    /** Yalnızca uygulama kartını yeniden kurar; arama kutusunun odağı ve kaydırma konumu korunur. */
+    private fun toggleSearch() {
+        val imm = act.getSystemService(InputMethodManager::class.java)
+        if (search.visibility == View.VISIBLE) {
+            imm?.hideSoftInputFromWindow(search.windowToken, 0)
+            search.setText("")
+            search.visibility = View.GONE
+        } else {
+            search.visibility = View.VISIBLE
+            search.requestFocus()
+            imm?.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT)
+        }
+    }
+
+    private fun info(pkg: String): AppInfo = infos.getOrPut(pkg) {
+        val pm = act.packageManager
+        try {
+            val ai = pm.getApplicationInfo(pkg, 0)
+            val icon: Drawable? = try {
+                pm.getApplicationIcon(ai)
+            } catch (e: Exception) {
+                null
+            }
+            val system = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0 &&
+                (ai.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+            AppInfo(pm.getApplicationLabel(ai).toString(), icon, system)
+        } catch (e: Exception) {
+            AppInfo(pkg, null, true)
+        }
+    }
+
+    private fun addAppRows(box: LinearLayout, rows: List<AppRow>) {
+        for (row in rows) {
+            val sub = if (row.last > 0L) Fmt.ago(row.last) else null
+            val pkg = row.pkg
+            val r = ui.switchRow(
+                row.info.label, sub, Prefs.appEnabled(act, pkg), appIcon = true, lead = row.info.icon,
+            ) { Prefs.setAppEnabled(act, pkg, it) }
+            ui.add(box, r.view)
+        }
+    }
+
+    /**
+     * Yalnızca uygulama kartını yeniden kurar; arama kutusunun odağı ve kaydırma konumu korunur.
+     * Sistem uygulamaları katlanır grupta durur; arama yapılırken grup açık gösterilir.
+     */
     private fun refreshApps() {
         appBox.removeAllViews()
-        val pm = act.packageManager
         val q = search.text.toString().trim().lowercase()
-        val apps = Prefs.seenApps(act).map { pkg ->
-            val label = labels.getOrPut(pkg) {
-                try {
-                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-                } catch (e: Exception) {
-                    pkg
-                }
-            }
-            Triple(pkg, label, Prefs.lastNotified(act, pkg))
-        }
+        val apps = Prefs.seenApps(act).map { pkg -> AppRow(pkg, info(pkg), Prefs.lastNotified(act, pkg)) }
         if (apps.isEmpty()) {
-            ui.add(appBox, ui.caption("Henüz bildirim görülmedi. Bildirim erişimini açtıktan sonra gelen bildirimlerle dolar."))
+            ui.add(
+                appBox,
+                ui.caption("Henüz bildirim görülmedi. Bildirim erişimini açtıktan sonra gelen bildirimlerle dolar."),
+                topDp = 10,
+            )
+            ui.add(appBox, ui.space(), height = ui.dp(10))
             return
         }
         val shown = apps
-            .filter { q.isEmpty() || it.second.lowercase().contains(q) || it.first.lowercase().contains(q) }
-            .sortedWith(compareByDescending<Triple<String, String, Long>> { it.third }.thenBy { it.second.lowercase() })
+            .filter { q.isEmpty() || it.info.label.lowercase().contains(q) || it.pkg.lowercase().contains(q) }
+            .sortedWith(compareByDescending<AppRow> { it.last }.thenBy { it.info.label.lowercase() })
         if (shown.isEmpty()) {
-            ui.add(appBox, ui.caption("Aramayla eşleşen uygulama yok."))
+            ui.add(appBox, ui.caption("Aramayla eşleşen uygulama yok."), topDp = 10)
+            ui.add(appBox, ui.space(), height = ui.dp(10))
             return
         }
-        for ((pkg, label, last) in shown) {
-            val sub = if (last > 0L) "Son: ${Fmt.ago(last)}" else null
-            val r = ui.switchRow(label, sub, Prefs.appEnabled(act, pkg)) { Prefs.setAppEnabled(act, pkg, it) }
-            ui.add(appBox, r.view)
+        val user = shown.filter { !it.info.system }
+        val system = shown.filter { it.info.system }
+        addAppRows(appBox, user)
+        if (system.isNotEmpty()) {
+            if (user.isNotEmpty()) ui.add(appBox, ui.divider(), height = ui.dp(1))
+            val group = ui.collapsible(
+                "Sistem uygulamaları (${system.size})", null, null,
+                open = systemOpen || q.isNotEmpty(), inCard = false,
+            )
+            group.onToggle = { open -> systemOpen = open }
+            addAppRows(group.content, system)
+            ui.add(appBox, group.view)
         }
     }
 
@@ -799,8 +972,9 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
     private val logShown = 300
     private var logCount = 0
 
-    private val setupBox: LinearLayout = ui.card()
-    private val idValue: TextView = ui.text("", 15f, R.color.text2)
+    private val setup: Collapsible = ui.collapsible("Kurulum", "", R.drawable.ic_check, open = false)
+    private val theme: Segmented = ui.segmented(listOf("Sistem", "Koyu", "Açık"), Prefs.themeMode(act)) { act.setThemeMode(it) }
+    private val idRow: NavRow = ui.navRow(null, "Kimlik", null, "") { editId() }
     private val deviceBox: LinearLayout = ui.vertical()
     private val autoTime: SwitchRow = ui.switchRow(
         "Bağlanınca saati eşitle",
@@ -813,36 +987,47 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         Prefs.remoteControl(act),
     ) { Prefs.setRemoteControl(act, it) }
     private val firmwareValue: TextView = ui.text("", 15f, R.color.text2)
+    private val profileRow: NavRow = ui.navRow(R.drawable.ic_user, "Profil", "", null) { act.watch.editProfile() }
     private val actionButtons = ArrayList<Button>()
     private val logView: TextView = ui.mono()
+    private var setupOpened = false
 
     init {
-        // Kurulum
-        ui.add(body, ui.section("Kurulum"))
-        ui.add(body, setupBox, topDp = 8)
+        // Kurulum özeti: dokununca ayrıntılı liste.
+        ui.add(body, setup.view, topDp = 4)
+
+        // Tema
+        val themeCard = ui.card()
+        ui.add(themeCard, ui.iconTitle(R.drawable.ic_theme, R.color.text2, "Tema"))
+        ui.add(themeCard, theme.view, topDp = 12)
+        ui.add(body, themeCard, topDp = 10)
 
         // Saat
-        ui.add(body, ui.section("Saat"))
-        val w = ui.card()
-        val idTrail = ui.horizontal()
-        ui.add(idTrail, idValue, width = Ui.WRAP)
-        ui.add(idTrail, ui.secondary("Değiştir") { editId() }, width = Ui.WRAP, leftDp = 16)
-        ui.add(w, ui.row("Kimlik", trailing = idTrail))
+        ui.add(body, ui.section("Saat"), topDp = 20)
+        val w = ui.card(padDp = 16, padVDp = 6)
+        ui.add(w, idRow.view)
         val btns = ui.horizontal()
         ui.add(btns, ui.secondary("Tara") { scan() }, width = 0, weight = 1f)
-        ui.add(btns, ui.primary("Bağlan") { connectSaved() }, width = 0, weight = 1f, leftDp = 8)
+        ui.add(btns, ui.tonal("Bağlan") { connectSaved() }, width = 0, weight = 1f, leftDp = 8)
         ui.add(btns, ui.secondary("Durdur") { WatchService.start(act, WatchService.ACTION_STOP) },
             width = 0, weight = 1f, leftDp = 8)
-        ui.add(w, btns, topDp = 8)
+        ui.add(w, btns, topDp = 4)
         ui.add(w, deviceBox, topDp = 8)
-        ui.add(w, autoTime.view, topDp = 8)
+        ui.add(w, ui.divider(), height = ui.dp(1))
+        ui.add(w, autoTime.view)
+        ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, remote.view)
+        ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, ui.row("Firmware", trailing = firmwareValue))
         ui.add(body, w, topDp = 8)
 
-        // Gelişmiş
-        ui.add(body, ui.section("Gelişmiş"))
-        val adv = ui.card()
+        // Profil
+        val profile = ui.card(padDp = 16, padVDp = 4)
+        ui.add(profile, profileRow.view)
+        ui.add(body, profile, topDp = 10)
+
+        // Gelişmiş ve log: varsayılan kapalı.
+        val adv = ui.collapsible("Gelişmiş ve log", "Test komutları, son satırlar", R.drawable.ic_code, open = false)
         actionButtons += ui.secondary("Firmware") {
             withWatch { it.command(UteCommand.firmwareRequest(), "firmware sorgu") }
         }
@@ -882,53 +1067,76 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
             if (i + 1 < actionButtons.size) {
                 ui.add(r, actionButtons[i + 1], width = 0, weight = 1f, leftDp = 8)
             } else {
-                ui.add(r, View(act), width = 0, weight = 1f, leftDp = 8)
+                ui.add(r, ui.space(), width = 0, weight = 1f, leftDp = 8)
             }
-            ui.add(adv, r, topDp = if (i == 0) 0 else 8)
+            ui.add(adv.content, r, topDp = if (i == 0) 0 else 8)
             i += 2
         }
-        ui.add(body, adv, topDp = 8)
-
-        // Log
-        ui.add(body, ui.section("Log"))
-        val logCard = ui.card()
+        ui.add(adv.content, ui.cardTitle("Log"), topDp = 20)
         val lr = ui.horizontal()
         ui.add(lr, ui.secondary("Logu kopyala") { copyLog() }, width = 0, weight = 1f)
-        ui.add(lr, ui.secondary("Logu temizle") { clearLog() }, width = 0, weight = 1f, leftDp = 8)
-        ui.add(logCard, lr)
-        ui.add(logCard, logView, topDp = 16)
-        ui.add(body, logCard, topDp = 8)
+        ui.add(lr, ui.danger("Logu temizle") { clearLog() }, width = 0, weight = 1f, leftDp = 8)
+        ui.add(adv.content, lr, topDp = 8)
+        ui.add(adv.content, logView, topDp = 12)
+        ui.add(body, adv.view, topDp = 10)
 
-        val footer = ui.caption("LS05 Controller 0.5.2")
+        // Hakkında
+        val footer = ui.caption("Finn's Watch ${versionName()}")
         footer.setGravity(Gravity.CENTER)
-        ui.add(body, footer, topDp = 24)
+        ui.add(body, footer, topDp = 20)
 
         refreshLog()
+    }
+
+    private fun versionName(): String = try {
+        act.packageManager.getPackageInfo(act.packageName, 0).versionName ?: "0.6.0"
+    } catch (e: Exception) {
+        "0.6.0"
     }
 
     override fun refresh() {
         refreshSetup()
         refreshWatchInfo()
+        theme.select(Prefs.themeMode(act))
         onReady(WatchHub.ready)
     }
 
+    /** Özet satırı: "Her şey hazır" ya da eksik sayısı. Eksik varsa liste ilk açılışta açık gelir. */
     private fun refreshSetup() {
-        setupBox.removeAllViews()
-        for (item in act.setupItems()) {
+        val items = act.setupItems()
+        val missing = items.count { it.ok == false }
+        if (missing == 0) {
+            setup.subtitle.text = "Her şey hazır"
+            setup.subtitle.setTextColor(ui.color(R.color.text2))
+            ui.setIcon(setup.icon, R.drawable.ic_check, R.color.text2)
+        } else {
+            setup.subtitle.text = "$missing adım eksik"
+            setup.subtitle.setTextColor(ui.color(R.color.warning))
+            ui.setIcon(setup.icon, R.drawable.ic_alert, R.color.warning)
+        }
+        setup.subtitle.visibility = View.VISIBLE
+        if (missing > 0 && !setupOpened) {
+            setupOpened = true
+            setup.setOpen(true)
+        }
+        setup.content.removeAllViews()
+        for (item in items) {
             val (label, tone) = when (item.ok) {
-                true -> "Tamam" to Tone.OK
+                true -> "Tamam" to Tone.NEUTRAL
                 false -> "Eksik" to Tone.WARN
-                null -> "Kontrol et" to Tone.WARN
+                null -> "Kontrol et" to Tone.NEUTRAL
             }
-            ui.add(setupBox, ui.row(item.label, trailing = ui.pill(label, tone), onClick = item.fix))
+            ui.add(setup.content, ui.row(item.label, trailing = ui.pill(label, tone), onClick = item.fix))
         }
     }
 
     fun refreshWatchInfo() {
-        idValue.text = if (hasId()) "Kayıtlı" else "Girilmedi"
+        idRow.value.text = if (hasId()) "Kayıtlı" else "Girilmedi"
         autoTime.toggle.set(Prefs.autoTime(act))
         remote.toggle.set(Prefs.remoteControl(act))
         firmwareValue.text = WatchHub.firmware ?: "bilinmiyor"
+        profileRow.subtitle.text =
+            if (SettingsStore.profileDraft(act).personalComplete) "Boy, kilo, yaş ve cinsiyet girildi." else "Boy, kilo, yaş ve cinsiyet girilmedi."
     }
 
     fun onReady(ready: Boolean) {

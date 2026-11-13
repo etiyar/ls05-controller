@@ -1,4 +1,4 @@
-# LS05 Controller
+# Finn's Watch (LS05 Controller)
 
 Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, üreticinin sunmadığı özelliklerle kullanmak için kişisel Android uygulaması. Saat artık resmi güncelleme almıyor; bu proje onun yerine geçiyor.
 
@@ -16,7 +16,19 @@ Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, �
 
 Not: Gerçek Find My / Find Hub kalabalık ağı (başkasının telefonunun saati görüp konum bildirmesi) firmware değişikliği ister. Bu, kurtarma yolu olmadan tek saati bozma riski taşıdığı için en sona bırakıldı. Telefon tarafındaki "son görülen konum" ve radar bu riski taşımadan kayıp saatin çoğu senaryosunu çözer.
 
-## Şu anki sürüm: v0.5.0 (test bekliyor)
+## Şu anki sürüm: v0.6.0 (görsel tur, test bekliyor)
+
+Uygulamanın adı artık **Finn's Watch** (paket adı `com.che.ls05` aynı, güncelleme eskisinin üzerine kurulur) ve kendi "FW" simgesi var. Bu sürüm yalnızca görünümü değiştirir; bağlantı, protokol ve ayar durum modeli v0.5 ile aynıdır.
+
+- Tek tasarım dili: renkler `docs/V06_TASARIM_SARTNAMESI.md` bölüm 2 tablosundan (`values/colors.xml`, `values-night/colors.xml`), bileşenler `Ui.kt` ve `Charts.kt` içinde. Üst uygulama çubuğu yok; her ekranda sayfa başlığı ve bağlantı kapsülü, altta tek yüzeyli menü.
+- Bugün: adım halkası, saatlik adım sütunları, nabız kartı (küçük eğri), uyku kartı (gerçek evre şeridi) ve evre açıklaması.
+- Saat: üç alarm kartı altı durumlu durum satırıyla ("başarısız" durumu yok), rahatsız etme ve saati bul yan yana, "Ekran ve profil" kartı.
+- Bildirimler: uygulama listesinde gerçek uygulama ikonları, sistem uygulamaları katlanır grupta, arama simgeyle açılır, test en altta.
+- Ayarlar: kurulum özeti, tema seçimi (Sistem, Koyu, Açık), saat, profil, "Gelişmiş ve log" (varsayılan kapalı).
+- Alarm notu bu sürümde yok (v0.6.1).
+
+### v0.5.0
+
 
 v0.4.2'nin (dört sekmeli arayüz, ortak ayar modeli, adım, nabız ve uyku) üzerine işlevsel eklemeler. Ekran görünümü değişmedi; yeni işlevler ilgili sekmelere kart ve satır olarak eklendi.
 

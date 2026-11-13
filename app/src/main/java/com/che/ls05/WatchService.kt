@@ -559,7 +559,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
-            .setContentTitle("LS05 saat")
+            .setContentTitle("Finn's Watch")
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(open)

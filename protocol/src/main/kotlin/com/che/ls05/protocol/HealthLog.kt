@@ -195,6 +195,15 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
     fun heartPoints(): List<HeartPoint> = heart.sortedBy { it.at }
 
     /**
+     * O gün uyanılan gecenin bölümleri, başlangıç zamanına göre sıralı (uyku şeridi için). Kural [sleepFor] ile aynı:
+     * bölüm saati 18 ve sonrasıysa bir önceki güne aittir, aynı bölüm bir kez sayılır. Kayıt yoksa boş liste.
+     */
+    fun sleepSegmentsFor(day: UteDate): List<SleepSegment> {
+        val segs = sleep[day]?.distinct() ?: return emptyList()
+        return segs.sortedBy { (if (it.hour >= 18) it.hour - 24 else it.hour) * 60 + it.minute }
+    }
+
+    /**
      * O gün uyanılan gecenin özeti. Bölüm saati 18 ve sonrasıysa bir önceki güne aittir.
      * Aynı bölüm iki kez geldiyse bir kez sayılır.
      */

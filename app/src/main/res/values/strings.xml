@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">LS05 Controller</string>
+    <string name="app_name">Finn\'s Watch</string>
+    <string name="listener_label">Finn\'s Watch bildirim iletimi</string>
 </resources>

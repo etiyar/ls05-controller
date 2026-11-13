@@ -1,17 +1,27 @@
 <resources>
-    <!-- Açık mod. Tek vurgu rengi: nane yeşili (açık zeminde okunur olması için koyu tonu). -->
-    <color name="bg">#F4F6FA</color>
+    <!-- Açık tema. Tek kaynak: docs/V06_TASARIM_SARTNAMESI.md bölüm 2. Kodda hex yok. -->
+    <color name="bg">#F4F5F3</color>
     <color name="card">#FFFFFF</color>
-    <color name="field">#E9EDF4</color>
-    <color name="text">#111A2B</color>
-    <color name="text2">#5A6679</color>
-    <color name="accent">#0B8F6C</color>
+    <color name="raised">#ECEEEB</color>
+    <color name="border">#DADDD9</color>
+    <color name="text">#15181C</color>
+    <color name="text2">#5B636C</color>
+    <color name="muted">#8A929A</color>
+    <color name="accent">#0E8A68</color>
+    <color name="accent_bg">#DDF3EB</color>
     <color name="on_accent">#FFFFFF</color>
-    <color name="ok_bg">#DDF5EC</color>
-    <color name="warn">#8A5F00</color>
-    <color name="warn_bg">#FFF1CC</color>
-    <color name="danger">#B93A32</color>
-    <color name="divider">#DDE3EC</color>
-    <color name="thumb_off">#FFFFFF</color>
-    <color name="track_off">#B9C2D0</color>
+    <color name="warning">#8A6200</color>
+    <color name="warning_bg">#FBEFD2</color>
+    <color name="danger">#B3333B</color>
+    <color name="sleep_deep">#4757B8</color>
+    <color name="sleep_light">#8FA0EE</color>
+    <color name="heart">#C9475A</color>
+    <color name="switch_off_track">#C9CED3</color>
+    <color name="switch_off_thumb">#FFFFFF</color>
+
+    <!-- Uygulama simgesi: temadan bağımsız, her zaman koyu kasa. -->
+    <color name="icon_bg">#0D0F12</color>
+    <color name="icon_case">#39414B</color>
+    <color name="icon_mint">#7FE3C3</color>
+    <color name="icon_white">#F3F4F2</color>
 </resources>

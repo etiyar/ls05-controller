@@ -147,6 +147,20 @@ class HealthLogTest {
     }
 
     @Test
+    fun sleepSegmentsAreOrderedAcrossMidnightAndCountedOnce() {
+        // Aynı gece, bölümler karışık sırada ve iki kez okunmuş.
+        val shuffled = "1E 02 00 02 01 00 64 17 1E 02 01 00 3C 03 28 03 01 00 0A 00 1E 01 01 00 5A"
+        val v = HealthView(listOf(e(night[0]), e(shuffled), e(night[0]), e(night[1])))
+        val segs = v.sleepSegmentsFor(UteDate(2026, 11, 13))
+        assertEquals(
+            listOf(SleepSegment(23, 30, 2, 60), SleepSegment(0, 30, 1, 90), SleepSegment(2, 0, 2, 100), SleepSegment(3, 40, 3, 10)),
+            segs,
+        )
+        assertEquals(v.sleepFor(UteDate(2026, 11, 13))!!.sleepMin + 10, segs.sumOf { it.minutes })
+        assertEquals(emptyList<SleepSegment>(), v.sleepSegmentsFor(UteDate(2026, 11, 12)))
+    }
+
+    @Test
     fun sleepRepeatedReadCountsOnceAndNeedsHeader() {
         val twice = HealthView((night + night).map { e(it) })
         assertEquals(250, twice.sleepFor(UteDate(2026, 11, 13))!!.sleepMin)

@@ -1,17 +1,21 @@
 <resources>
-    <!-- Koyu mod: koyu lacivert yüzeyler, kırık beyaz metin, nane yeşili vurgu. -->
-    <color name="bg">#0E1626</color>
-    <color name="card">#172238</color>
-    <color name="field">#213050</color>
-    <color name="text">#F2EFE6</color>
-    <color name="text2">#9AA7BD</color>
-    <color name="accent">#6EE7B7</color>
+    <!-- Koyu tema. Tek kaynak: docs/V06_TASARIM_SARTNAMESI.md bölüm 2. -->
+    <color name="bg">#0D0F12</color>
+    <color name="card">#171B20</color>
+    <color name="raised">#20262D</color>
+    <color name="border">#2B323A</color>
+    <color name="text">#F3F4F2</color>
+    <color name="text2">#A6AFB8</color>
+    <color name="muted">#7F8A95</color>
+    <color name="accent">#7FE3C3</color>
+    <color name="accent_bg">#15382E</color>
     <color name="on_accent">#06281F</color>
-    <color name="ok_bg">#12362E</color>
-    <color name="warn">#F5C451</color>
-    <color name="warn_bg">#3A3113</color>
-    <color name="danger">#F2777A</color>
-    <color name="divider">#263553</color>
-    <color name="thumb_off">#C9D1DE</color>
-    <color name="track_off">#3A4966</color>
+    <color name="warning">#E2BC70</color>
+    <color name="warning_bg">#3A3016</color>
+    <color name="danger">#E78D93</color>
+    <color name="sleep_deep">#5769CC</color>
+    <color name="sleep_light">#A9B7F5</color>
+    <color name="heart">#F09AA5</color>
+    <color name="switch_off_track">#3A414A</color>
+    <color name="switch_off_thumb">#C8CED3</color>
 </resources>

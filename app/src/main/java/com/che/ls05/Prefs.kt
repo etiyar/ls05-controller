@@ -72,6 +72,13 @@ object Prefs {
     fun lastSync(c: Context): Long = p(c).getLong("lastSync", 0L)
     fun setLastSync(c: Context, at: Long) = p(c).edit().putLong("lastSync", at).apply()
 
+    /** Tema seçimi: sistem, koyu ya da açık. */
+    const val THEME_SYSTEM = 0
+    const val THEME_DARK = 1
+    const val THEME_LIGHT = 2
+    fun themeMode(c: Context): Int = p(c).getInt("themeMode", THEME_SYSTEM).coerceIn(THEME_SYSTEM, THEME_LIGHT)
+    fun setThemeMode(c: Context, value: Int) = p(c).edit().putInt("themeMode", value).apply()
+
     // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
     // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.
 }
