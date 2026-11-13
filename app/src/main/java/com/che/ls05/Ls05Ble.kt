@@ -20,6 +20,7 @@ import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteFrame
 import com.che.ls05.protocol.UteParser
 import com.che.ls05.protocol.UteUuids
+import com.che.ls05.protocol.WatchKeys
 import com.che.ls05.protocol.MSG_TYPE_GENERIC
 import java.util.UUID
 
@@ -452,6 +453,10 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.RealHeart -> log("   = Nabız ölçüm paketi (anlamı doğrulanmadı)")
             is UteFrame.SleepHeader -> log("   = Uyku başlığı ${frame.date.day}.${frame.date.month}: ${frame.count} bölüm")
             is UteFrame.SleepData -> log("   = Uyku bölümleri alındı: ${frame.segments.size}")
+            is UteFrame.WatchKey -> log("   = Saatten kumanda: ${WatchKeys.label(WatchKeys.action(frame))}")
+            is UteFrame.MusicStateAck -> log("   = Müzik durumu saat tarafından alındı")
+            is UteFrame.ProfileAck -> log("   = Profil paketi saat tarafından alındı")
+            is UteFrame.CallStopAck -> log("   = Arama durdurma saat tarafından alındı")
             is UteFrame.Echo -> Unit
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
@@ -506,6 +511,29 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         // Kayıttaki sıra: 0F FD'den hemen sonra mesaj titreşimi. İsteğe bağlı.
         if (vibrateAfter) enqueue(Op.Write(c.write, UteCommand.VIBRATE_TEXT, "mesaj titreşimi (06)", gapAfterMs = 300))
         return packets.size
+    }
+
+    /**
+     * Gelen arama: 0F 00 00 [uzunluk] + ad, 0F FD, ardından arama titreşimi (11 Kasım kaydındaki sıra).
+     * Ad loga yazılmaz.
+     */
+    fun sendIncomingCall(name: String): Int {
+        val c = active ?: run { log("Hazır değil, gelen arama gönderilmedi."); return 0 }
+        val packets = NotificationPacketizer.buildIncomingCall(name)
+        log("Gelen arama: ${packets.size} paket + arama titreşimi. Ad loga yazılmaz.")
+        packets.forEachIndexed { i, p ->
+            enqueue(Op.Write(c.write, p, "arama paket ${i + 1}/${packets.size}", gapAfterMs = 50))
+        }
+        enqueue(Op.Write(c.write, UteCommand.VIBRATE_CALL, "arama titreşimi (06)", gapAfterMs = 100))
+        return packets.size
+    }
+
+    /** Arama cevaplandı ya da bitti: 0D 04, ardından titreşimi durdur (kayıttaki sıra). */
+    fun sendCallStop(): Boolean {
+        if (active == null) { log("Hazır değil, arama durdurma gönderilmedi."); return false }
+        sendCommand(UteCommand.CALL_STOP, "arama bitti (0D 04)")
+        sendCommand(UteCommand.VIBRATE_STOP, "titreşimi durdur (06)")
+        return true
     }
 
     /** Bildirimden bağımsız titreşim. Yalnızca kayıtta görülen mesaj titreşimi kalıbı. */

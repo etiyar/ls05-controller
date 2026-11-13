@@ -210,3 +210,60 @@ object HealthSummary {
         records.filter { it.date == day }.groupBy { it.hour }
             .values.sumOf { list -> list.maxOf { it.total } }
 }
+
+/**
+ * Profil ve ekran ayarları (komut 05), 19 bayt. Güven: düzen yüksek.
+ * Kaynaklar: Haylou Fun SetDeviceParamsEvent, Hello Haylou a3.u0 (SET_USER_INFO) ve kayıt (iki bağlantıda aynı düzen).
+ *
+ * 05 [boy cm 2B] [kilo kg 2B] [ekran açık süresi sn] [adım hedefi 4B] [bileği kaldır 0/1]
+ *    [nabız üst uyarı, kapalıysa FF] 00 [yaş] [cinsiyet 1 erkek / 2 kadın]
+ *    [kayıp uyarısı] [dil] [mesafe birimi 1 km / 2 mil] [nabız alt uyarı, kapalıysa 00]
+ *
+ * Kodda çözülen iki bayt:
+ *  - bayt 15 ("d6"): Haylou Fun'da o6.a.d("watch_device_lost_warning", 0), yani saatin bağlantı kopunca
+ *    uyarması (kayıp uyarısı). Hello Haylou hep 0. Kayıtta 0. Biz 0 gönderiyoruz (kapalı).
+ *  - bayt 16 ("E"): Haylou Fun'da SetWatchLanguageEvent.E(), yani dil kodu (25 AB [dil] ile aynı tablo: 2 İngilizce,
+ *    16 Türkçe). Hello Haylou hep 2. Kayıtta 2. Biz 2 gönderiyoruz; Türkçe menü ayrı bir kontrollü test konusu.
+ * Sabit tutulanlar (kayıttaki değerler): nabız uyarıları kapalı (FF / 00), mesafe km (1), bayt 12 = 0.
+ * Ekran süresi seçenekleri Haylou Fun arayüzünden: 5, 10, 15 sn. Saatin yanıtı tek bayt 05 (kayıt).
+ */
+object UteProfile {
+    val SCREEN_SECONDS = intArrayOf(5, 10, 15)
+    const val SEX_MALE = 1
+    const val SEX_FEMALE = 2
+    val HEIGHT_RANGE = 80..250
+    val WEIGHT_RANGE = 20..250
+    val AGE_RANGE = 5..120
+    val GOAL_RANGE = 1000..50000
+
+    const val LOST_WARNING_OFF = 0
+    const val LANGUAGE_ENGLISH = 2
+    const val DISTANCE_KM = 1
+    const val HR_HIGH_OFF = 0xFF
+    const val HR_LOW_OFF = 0
+
+    fun build(heightCm: Int, weightKg: Int, screenSec: Int, stepGoal: Int, raiseWrist: Boolean, age: Int, sex: Int): ByteArray {
+        require(heightCm in HEIGHT_RANGE) { "boy aralık dışında" }
+        require(weightKg in WEIGHT_RANGE) { "kilo aralık dışında" }
+        require(screenSec in SCREEN_SECONDS) { "ekran süresi 5, 10 ya da 15 sn olmalı" }
+        require(stepGoal in GOAL_RANGE) { "adım hedefi aralık dışında" }
+        require(age in AGE_RANGE) { "yaş aralık dışında" }
+        require(sex == SEX_MALE || sex == SEX_FEMALE) { "cinsiyet 1 ya da 2 olmalı" }
+        return byteArrayOf(
+            0x05,
+            (heightCm shr 8).toByte(), heightCm.toByte(),
+            (weightKg shr 8).toByte(), weightKg.toByte(),
+            screenSec.toByte(),
+            (stepGoal shr 24).toByte(), (stepGoal shr 16).toByte(), (stepGoal shr 8).toByte(), stepGoal.toByte(),
+            (if (raiseWrist) 1 else 0).toByte(),
+            HR_HIGH_OFF.toByte(),
+            0,
+            age.toByte(),
+            sex.toByte(),
+            LOST_WARNING_OFF.toByte(),
+            LANGUAGE_ENGLISH.toByte(),
+            DISTANCE_KM.toByte(),
+            HR_LOW_OFF.toByte(),
+        )
+    }
+}

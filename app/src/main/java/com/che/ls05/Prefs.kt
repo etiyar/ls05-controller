@@ -43,8 +43,27 @@ object Prefs {
     fun lastNotified(c: Context, pkg: String): Long = p(c).getLong("last:$pkg", 0L)
     fun setLastNotified(c: Context, pkg: String, at: Long) = p(c).edit().putLong("last:$pkg", at).apply()
 
-    /** Günlük adım hedefi. */
-    fun stepGoal(c: Context): Int = p(c).getInt("stepGoal", 8000)
+    // Günlük adım hedefi v0.5'ten beri profilde (SettingsStore.profileDraft). Bugün ekranı ve saat aynı değeri kullanır.
+
+    /** Gelen arama saate iletilsin mi (varsayılan açık). */
+    fun incomingCalls(c: Context): Boolean = p(c).getBoolean("incomingCalls", true)
+    fun setIncomingCalls(c: Context, value: Boolean) = p(c).edit().putBoolean("incomingCalls", value).apply()
+
+    /** Cevapsız arama saate iletilsin mi (varsayılan açık). */
+    fun missedCalls(c: Context): Boolean = p(c).getBoolean("missedCalls", true)
+    fun setMissedCalls(c: Context, value: Boolean) = p(c).edit().putBoolean("missedCalls", value).apply()
+
+    /** Saatin müzik, ses ve telefonu bul kumandası uygulansın mı (varsayılan açık). */
+    fun remoteControl(c: Context): Boolean = p(c).getBoolean("remoteControl", true)
+    fun setRemoteControl(c: Context, value: Boolean) = p(c).edit().putBoolean("remoteControl", value).apply()
+
+    /** Profil taslağı (ProfileSetting metni). Kişisel veri: yalnızca bu dosyada, loga girmez. */
+    fun profileDraftText(c: Context): String? = p(c).getString("profileDraft", null)
+    fun setProfileDraftText(c: Context, value: String) = p(c).edit().putString("profileDraft", value).apply()
+
+    /** Saat profil paketini en az bir kez onayladı mı. O zamana kadar profil yalnızca elle gönderilir. */
+    fun profileVerified(c: Context): Boolean = p(c).getBoolean("profileVerified", false)
+    fun setProfileVerified(c: Context, value: Boolean) = p(c).edit().putBoolean("profileVerified", value).apply()
 
     /** Son başarılı adım geçmişi okuması (ms); 0 = hiç. */
     fun lastSync(c: Context): Long = p(c).getLong("lastSync", 0L)

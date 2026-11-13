@@ -22,6 +22,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- "Telefonu bul" titreşimi (normal izin, kullanıcıya sorulmaz) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Bildirim gönderen uygulamaların adlarını göstermek için (Android 11+ paket görünürlüğü) -->
     <queries>
         <intent>
@@ -59,6 +62,10 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".FindPhoneStopReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"

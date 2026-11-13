@@ -21,14 +21,19 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.view.KeyEvent
 import com.che.ls05.protocol.AlarmSetting
 import com.che.ls05.protocol.DndSetting
+import com.che.ls05.protocol.ProfileSetting
+import com.che.ls05.protocol.RemoteAction
 import com.che.ls05.protocol.SettingCommands
 import com.che.ls05.protocol.SettingSync
 import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteDate
 import com.che.ls05.protocol.UteFrame
 import com.che.ls05.protocol.UteHealth
+import com.che.ls05.protocol.UteMusic
+import com.che.ls05.protocol.WatchKeys
 import java.time.LocalDate
 import java.time.ZonedDateTime
 
@@ -56,13 +61,21 @@ class WatchService : Service(), Ls05Ble.Listener {
         private const val HISTORY_STALE_MS = 30 * 60 * 1000L
         private const val MAX_LIVE_STEPS = 48
 
-        fun start(context: Context, action: String = ACTION_START, address: String? = null) {
+        /** Saat bu süreden uzun çalmaz: arama bitişi kaçırılırsa saat susturulur. */
+        private const val CALL_MAX_MS = 60_000L
+        private const val NUDGE_MIN_INTERVAL_MS = 30_000L
+        private const val MUSIC_STATE_DELAY_MS = 700L
+
+        /** Başlatma isteği sisteme iletildiyse true. Arka plan kısıtı (Android 12+) gibi hatalarda false. */
+        fun start(context: Context, action: String = ACTION_START, address: String? = null): Boolean {
             val i = Intent(context, WatchService::class.java).setAction(action)
             if (address != null) i.putExtra(EXTRA_ADDRESS, address)
-            try {
+            return try {
                 context.startForegroundService(i)
+                true
             } catch (e: Exception) {
                 WatchHub.log("Servis başlatılamadı: ${e.javaClass.simpleName}. Uygulamayı açıp tekrar dene.")
+                false
             }
         }
     }
@@ -86,6 +99,12 @@ class WatchService : Service(), Ls05Ble.Listener {
     private val delayedToken = Any()
 
     private val reconnectRunnable = Runnable { connectSaved(autoConnect = true) }
+
+    /** Saatte gelen arama ekranı açık (0D 04 henüz gönderilmedi). */
+    private var callOnWatch = false
+    private val callSafetyStop = Runnable { sendCallStop("arama ${CALL_MAX_MS / 1000} sn içinde bitmedi") }
+    private val musicStateRunnable = Runnable { sendMusicState() }
+    private var lastNudge = 0L
 
     private val btReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -122,6 +141,9 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     override fun onDestroy() {
         main.removeCallbacks(reconnectRunnable)
+        main.removeCallbacks(callSafetyStop)
+        main.removeCallbacks(musicStateRunnable)
+        PhoneFinder.stop("servis kapandı")
         main.removeCallbacksAndMessages(delayedToken)
         try { unregisterReceiver(btReceiver) } catch (_: Exception) {}
         if (ble.isConnected) {
@@ -217,6 +239,20 @@ class WatchService : Service(), Ls05Ble.Listener {
         ble.connect(device, autoConnect)
     }
 
+    /**
+     * Saat hazır değilken bildirim geldi: servis yaşıyor ama yeniden bağlanma beklemesindeyse beklemeyi öne alır.
+     * Bağlantı denemesi sürüyorsa (otomatik bağlantı dahil) bir şey yapmaz. En çok 30 sn'de bir.
+     */
+    fun nudgeReconnect() {
+        if (stopping || authBlocked || ble.isConnected) return
+        val now = SystemClock.uptimeMillis()
+        if (now - lastNudge < NUDGE_MIN_INTERVAL_MS) return
+        lastNudge = now
+        WatchHub.log("Bekleyen bildirim var; yeniden bağlanma öne alındı.")
+        main.removeCallbacks(reconnectRunnable)
+        connectSaved(autoConnect = false)
+    }
+
     private fun scheduleReconnect() {
         val delay = backoffMs[minOf(reconnectAttempt, backoffMs.size - 1)]
         reconnectAttempt++
@@ -239,10 +275,88 @@ class WatchService : Service(), Ls05Ble.Listener {
     }
 
     fun forward(note: WatchHub.Note) {
-        val sent = ble.sendNotification(note.title, note.body, Prefs.vibrate(this), note.type)
-        if (sent > 0) {
-            WatchHub.log("İletildi: ${note.appLabel} (tip ${note.type}, ${note.title.length + note.body.length} karakter).")
+        when (note.kind) {
+            WatchHub.NoteKind.MESSAGE, WatchHub.NoteKind.MISSED_CALL -> {
+                val sent = ble.sendNotification(note.title, note.body, Prefs.vibrate(this), note.type)
+                if (sent > 0) {
+                    val what = if (note.kind == WatchHub.NoteKind.MISSED_CALL) "Cevapsız arama" else note.appLabel
+                    WatchHub.log("İletildi: $what (tip ${note.type}, ${note.title.length + note.body.length} karakter).")
+                }
+            }
+            WatchHub.NoteKind.CALL_ALERT -> sendCallAlert(note.body)
+            WatchHub.NoteKind.CALL_STOP -> sendCallStop("arama cevaplandı ya da bitti")
         }
+    }
+
+    // ---------- Gelen arama ----------
+
+    private fun sendCallAlert(name: String) {
+        if (!ble.isReady) return
+        if (ble.sendIncomingCall(name) > 0) {
+            callOnWatch = true
+            main.removeCallbacks(callSafetyStop)
+            main.postDelayed(callSafetyStop, CALL_MAX_MS)
+            WatchHub.log("Gelen arama saate iletildi (${name.length} karakter).")
+        }
+    }
+
+    /** Saatte arama ekranı açıksa kapatır. Saat hazır değilse bağlanınca kapatılır. */
+    private fun sendCallStop(reason: String) {
+        if (!callOnWatch) return
+        if (!ble.isReady) return
+        main.removeCallbacks(callSafetyStop)
+        if (ble.sendCallStop()) {
+            callOnWatch = false
+            WatchHub.log("Saatteki arama ekranı kapatıldı ($reason).")
+        }
+    }
+
+    // ---------- Saatten kumanda ----------
+
+    private fun handleWatchKey(key: UteFrame.WatchKey) {
+        val action = WatchKeys.action(key)
+        val label = WatchKeys.label(action)
+        if (!Prefs.remoteControl(this)) {
+            if (action != RemoteAction.UNKNOWN) WatchHub.log("Saatten kumanda kapalı; yok sayıldı ($label).")
+            return
+        }
+        when (action) {
+            RemoteAction.PLAY_PAUSE -> PhoneRemote.mediaKey(this, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            RemoteAction.NEXT -> PhoneRemote.mediaKey(this, KeyEvent.KEYCODE_MEDIA_NEXT)
+            RemoteAction.PREVIOUS -> PhoneRemote.mediaKey(this, KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            RemoteAction.VOLUME_UP -> PhoneRemote.adjustVolume(this, true)
+            RemoteAction.VOLUME_DOWN -> PhoneRemote.adjustVolume(this, false)
+            RemoteAction.FIND_PHONE_START -> PhoneFinder.start(this)
+            RemoteAction.FIND_PHONE_STOP -> PhoneFinder.stop("saatten durduruldu")
+            RemoteAction.FIND_PHONE_TOGGLE ->
+                if (PhoneFinder.isActive) PhoneFinder.stop("saatten durduruldu") else PhoneFinder.start(this)
+            RemoteAction.REJECT_CALL -> {
+                WatchHub.log("Saat aramayı reddetmek istedi (12 02). Bu sürümde desteklenmiyor; yalnızca loglandı.")
+                return
+            }
+            RemoteAction.CAMERA_ENTER, RemoteAction.CAMERA_EXIT -> {
+                WatchHub.log("Saat kamera kumandası gönderdi ($label). Bu sürümde desteklenmiyor; yalnızca loglandı.")
+                return
+            }
+            RemoteAction.UNKNOWN -> {
+                WatchHub.log("Saatten bilinmeyen kumanda paketi; yalnızca loglandı.")
+                return
+            }
+        }
+        WatchHub.log("Saatten kumanda uygulandı: $label.")
+        if (action != RemoteAction.FIND_PHONE_START && action != RemoteAction.FIND_PHONE_STOP &&
+            action != RemoteAction.FIND_PHONE_TOGGLE
+        ) {
+            main.removeCallbacks(musicStateRunnable)
+            main.postDelayed(musicStateRunnable, MUSIC_STATE_DELAY_MS)
+        }
+    }
+
+    /** Telefonun müzik durumu ve ses düzeyi (12 0C, 12 0D). Haylou Fun bağlanınca ve değişince gönderiyor. */
+    private fun sendMusicState() {
+        if (!ble.isReady || !Prefs.remoteControl(this)) return
+        ble.sendCommand(UteMusic.playState(PhoneRemote.isMusicActive(this)), "müzik durumu (12 0C)")
+        ble.sendCommand(UteMusic.volume(PhoneRemote.volumePercent(this)), "ses düzeyi (12 0D)")
     }
 
     // ---------- Ayar eşitleme ----------
@@ -284,6 +398,10 @@ class WatchService : Service(), Ls05Ble.Listener {
         when (sync.onAck(key, session, System.currentTimeMillis(), ackValue)) {
             SettingSync.Ack.MATCHED -> {
                 SettingsStore.save(this)
+                if (key == ProfileSetting.KEY && !Prefs.profileVerified(this)) {
+                    Prefs.setProfileVerified(this, true)
+                    WatchHub.log("Profil ilk kez onaylandı; bundan sonra değişiklikler saate kendiliğinden gider.")
+                }
                 WatchHub.log("Saat ayarı onayladı ($key).")
                 WatchHub.settingsChanged()
                 // Komut yoldayken kullanıcı değeri değiştirdiyse yeni istek şimdi gider.
@@ -339,6 +457,8 @@ class WatchService : Service(), Ls05Ble.Listener {
         when (frame) {
             is UteFrame.AlarmAck -> handleAck(AlarmSetting.key(frame.slot), null)
             is UteFrame.DndAck -> handleAck(DndSetting.KEY, DndSetting.fromEcho(frame.bytes)?.encode())
+            is UteFrame.ProfileAck -> handleAck(ProfileSetting.KEY, null)
+            is UteFrame.WatchKey -> handleWatchKey(frame)
             is UteFrame.Steps -> if (frame.hour.live) {
                 val h = frame.hour
                 HealthStore.live["${h.date.year}-${h.date.month}-${h.date.day}-${h.hour}"] = h
@@ -362,7 +482,10 @@ class WatchService : Service(), Ls05Ble.Listener {
         reconnectAttempt = 0
         authTimeouts = 0
         if (Prefs.autoTime(this)) sendTime("otomatik saat eşitleme (04)")
+        // Bağlantı koparken saat çalıyor kaldıysa ve arama artık sürmüyorsa sustur.
+        if (callOnWatch && !WatchHub.calls.isRinging) sendCallStop("bağlantı yeniden kuruldu, arama sürmüyor")
         flushPending()
+        sendMusicState()
         pushSettings()
         if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(true)
     }

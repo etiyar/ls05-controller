@@ -113,7 +113,7 @@ Tek sürüm, üç sıralı iç hedef. Her hedef kendi kabul testini geçmeden so
 - İlk kullanım = kontrollü test: her biri bir kez gönderilir, saatin ekranında doğrulanır, sonuç buraya yazılır.
 - 12 Kasım: alarm yuvaları 1 ve 2, rahatsız etme açık/kapalı saat tarafından onaylandı (`06 01`, `06 02`, `15` yankısı). Alarm 2 (21:20) saatte çaldı: alarm uçtan uca GEÇTİ.
 - 12 Kasım 21:07: bağlantı iki kez koptu (status 8, 62), servis kendisi yeniden bağlandı, arada gelen 3 bildirim kuyruktan iletildi. M1/M2 yeniden bağlanma testi GEÇTİ.
-- Uzun bildirimde saat `0F FD 04 A0` döndü: 254 bayt gönderildi, 160 bayt alındı. Saat ilk 80 karakteri tutuyor olabilir (O). Doğrulanırsa metin 80 karakterde kesilir.
+- Uzun bildirimde saat `0F FD 04 A0` döndü: 254 bayt gönderildi, 160 bayt alındı. Gerçek saat cetvel testi: saat yaklaşık 78 karakter gösterip "..." koyuyor. v0.5.0'dan beri metin 80 UTF-16 biriminde kesiliyor (vekil çift bölünmez).
 
 **v0.2 kabul testleri**
 
@@ -159,7 +159,11 @@ Kayıp saat yalnızca telefon üzerinden çözülür (kullanıcı kararı, 12 Ka
 - Bu, üreticinin resmi yükleme yolu, firmware değil. Yine de bozuk dosyanın etkisi bilinmiyor.
 - Sıra: (1) Haylou'nun kadran galerisi hâlâ çalışıyor mu kontrol et, (2) Haylou Fun'ın bir kadran yüklemesini kaydet, (3) aynı resmi dosyayı bizim uygulamadan birebir yükle, (4) ancak sonra özel kadran araştırılır.
 
-### v0.5: Otomasyon (K-O)
+### v0.5.0: İşlevsel tamamlama (yazıldı, gerçek cihaz testi bekliyor)
+
+- Bildirim 80 karakter, gelen ve cevapsız arama, saatten kumanda, ekran ve profil (`05`), kaydırma sonrası bildirim kaybına karşı servis başlatma. Ayrıntı: 4.2 ve README.
+
+### Sonra: Otomasyon (K-O)
 
 - Tasker/intent arayüzü; kural motoru (sessiz saatler, kişiye göre titreşim, saat düğmesi olayı `12`).
 
@@ -188,10 +192,30 @@ Hello Haylou kuralı: o uygulama birçok saat markasını destekliyor. Yalnızca
 | SpO2 `86 FA` | İstek `86 FA [tarih] 00 00` (Haylou Fun), veri `86 FA …`, son `86 FA FD` (Hello Haylou). İki uygulama uyuşuyor. | O |
 | Hareketsizlik uyarısı `14` | `14 [açık] [aralık dk] 02 05 00 00 [baş sa] [baş dk] [bit sa] [bit dk] [öğle arası]` (Haylou Fun); Hello Haylou da `14` diyor | O |
 | Durum `0c 02` | Yanıt `0c 02 [bayrak]`; rahatsız etme açılınca 0x42 → 0x4a (bit 0x08) | O |
-| Müzik `12` | `12 0c [1 çalıyor / 2 durdu]`, `12 0d [ses %]`; saat düğmelerden `12 xx` yollayabilir. v0.5 adayı. | O |
+| Müzik `12` | `12 0c [1 çalıyor / 2 durdu]`, `12 0d [ses %]`; saat düğmelerden `12 xx` yollayabilir. v0.5'te çözüldü, bkz. 4.2. | Y |
 | Dil `25 ab [kod]` | Kayıtta 02 (İngilizce). Haylou Fun tablosunda `tr_TR` = 16. Saat yazılımı Türkçe menüyü destekliyor mu bilinmiyor; tek kontrollü test adayı. | O |
 | Birim/saat biçimi `01` | `01 [mesafe birimi] [saat biçimi]` | Y |
-| Profil `05` | Boy, kilo, yaş, cinsiyet, adım hedefi (8000 = `00 00 1f 40`) vb. Kişisel veri: logda gizlenir, depoya girmez. | Y |
+| Profil `05` | Boy, kilo, yaş, cinsiyet, adım hedefi (8000 = `00 00 1f 40`) vb. Kişisel veri: logda gizlenir, depoya girmez. Tam düzen 4.2'de. | Y |
+
+### 4.2 v0.5.0 bulguları (13 Kasım, kod okuması + 11 ve 12 Kasım kayıtları)
+
+Kaynaklar: Haylou Fun (`youcy/event`, `com.yingsheng.protocol.youcy.task`, `rd/b`), Hello Haylou (`c8/a3` ve `MiBandSupport` geri çağrısı, classes10 tek sınıf yeniden açıldı), kayıtlar (`nt.log` 11 Kasım: iki gelen arama; `s.log` 12 Kasım). Y = iki kaynak ve kayıt tutarlı; O = tek kaynak ya da kaynaklar arasında fark var.
+
+| Komut | Biçim | Güven |
+| --- | --- | --- |
+| Gelen arama metni | `0F 00 00 [uzunluk]` + ad (UTF-16BE, en çok 30 bayt = 15 birim), devam `0F 01 …`, `0F FD`. Tip 0, `0F` bildirimiyle aynı paketleme. Haylou Fun `UpdateMobCallStatusEvent`/`Task`, Hello Haylou `ALERT_CALL_TEXT`, kayıtta iki arama (`0F 00 00 18`, `0F 00 00 0A`). | Y |
+| Arama bitti | `0D 04`; saat aynen yankılıyor. Haylou Fun (arama bitince), Hello Haylou `ALERT_CALL_TEXT_STOP`, kayıt. | Y |
+| Arama titreşimi | Düzen `06 00 00 00 [sayı] [süre] 00 00` (Haylou Fun `SetVibrateEvent`). Değer kaynaklarda farklı: kayıtta `FF FF`, Haylou Fun 4.0.7 kodunda `03 20`, Hello Haylou `01 0A 02 01`. Uygulama kayıttakini (`FF FF`) gönderiyor, bitişte mutlaka durduruyor, en geç 60 sn sonra susturuyor. | O |
+| Titreşimi durdur | `06 00 00 00 00 00 00 00`; Haylou Fun, Hello Haylou `VIBRATE_END`, kayıt aynı. Yanıt `06 00`. | Y |
+| Cevapsız arama | Ayrı komut yok; tip 3 bildirim (Haylou Fun `SendMsgEvent` arama öğesi 3 başlıksız gönderir, Hello Haylou tablosunda 3 arama). Saatteki simgesi denenmedi. | O |
+| Saatten kumanda | `12 [kod]`: `07` oynat/duraklat, `08` sonraki, `09` önceki, `0D` ses aç, `0E` ses kıs, `0A` telefonu bul (ek bayt yoksa aç/kapa, `01` başlat, `00` durdur), `02` aramayı reddet, `11`/`0F` kamera aç/kapat. `D1 0A` de telefonu bul. Haylou Fun `OnClickKeyTask` + `rd/b`, Hello Haylou `a3` (tam 2 baytlık paketler) tutarlı. Kayıtta saatten gelen tuş yok; ilk kullanım kontrollü test. Uygulama müzik ve ses kodlarını yalnızca tam 2 baytlık pakette uygular (`12 0D [ses]` yankısı döngü yapmasın); `02`, kamera ve bilinmeyenler yalnızca loglanır. | Y kod, test bekliyor |
+| Müzik durumu | `12 0C [1 çalıyor / 2 durdu]` (yanıt `12 0C 00`), `12 0D [ses %]`. Haylou Fun `MusicControlTask`, Hello Haylou `SET_MUSIC_STATE`, kayıt (`12 0c 02`, `12 0d 06`, `12 0d 64`). Uygulama bağlanınca ve kumandadan sonra gönderiyor. | Y |
+| Profil ve ekran `05` | `05 [boy 2B] [kilo 2B] [ekran sn] [hedef 4B] [bilek 0/1] [nabız üst, kapalı FF] 00 [yaş] [cinsiyet 1 erkek / 2 kadın] [kayıp uyarısı] [dil] [mesafe 1 km / 2 mil] [nabız alt, kapalı 00]`. Haylou Fun `SetDeviceParamsEvent` ve Hello Haylou `u0` aynı düzen. Kayıttaki 39 paketin 38'i uygulamanın üreticisiyle bayt bayt aynı (yerel kontrol, değerler yazılmadı); farklı olan tek paket başka bir oturumda nabız uyarıları ve dil baytı değişmiş hali. Yanıt tek bayt `05`. | Y |
+| `05` bayt 15 ("d6") | Haylou Fun `watch_device_lost_warning` ayarı: saatin bağlantı kopunca uyarması. Hello Haylou hep 0, kayıtta 0. Uygulama 0 gönderir. | O |
+| `05` bayt 16 ("E") | Haylou Fun `SetWatchLanguageEvent.E()`: dil kodu (`25 AB` ile aynı tablo, 2 İngilizce, 16 Türkçe). Hello Haylou hep 2, kayıtta 2 (bir oturumda 1). Uygulama 2 gönderir. | Y anlam, O etki |
+| Ekran süresi seçenekleri | 5, 10, 15 sn (Haylou Fun ayar penceresi). | Y |
+
+Gönderilmeyenler: `12 02` ile aramayı reddetme (ek izin gerekir), kamera kumandası, `D1` ile başlayan diğer kodlar (yalnızca Hello Haylou'da), Türkçe dil kodu (ayrı kontrollü test).
 
 ### Araştırma kolu (paralel, YALNIZCA OKUMA)
 

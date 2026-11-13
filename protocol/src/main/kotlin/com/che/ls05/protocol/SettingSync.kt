@@ -211,10 +211,75 @@ data class DndSetting(val enabled: Boolean, val startHour: Int, val startMinute:
     }
 }
 
+/**
+ * Profil ve ekran ayarları (komut 05). Boy, kilo, yaş ve cinsiyet kullanıcı girene kadar null; eksik profil
+ * için komut üretilmez (uydurma değer gönderilmez). Metin biçimi: boy|kilo|yaş|cinsiyet|ekran sn|bilek|hedef,
+ * eksik alan boş. Kişisel veridir: yalnızca telefonda saklanır, loga ve depoya girmez.
+ */
+data class ProfileSetting(
+    val heightCm: Int?,
+    val weightKg: Int?,
+    val age: Int?,
+    val sex: Int?,
+    val screenSec: Int,
+    val raiseWrist: Boolean,
+    val stepGoal: Int,
+) {
+    val personalComplete: Boolean
+        get() = heightCm != null && weightKg != null && age != null && sex != null
+
+    fun encode(): String = listOf(
+        heightCm?.toString() ?: "", weightKg?.toString() ?: "", age?.toString() ?: "", sex?.toString() ?: "",
+        screenSec.toString(), if (raiseWrist) "1" else "0", stepGoal.toString(),
+    ).joinToString("|")
+
+    /** Eksik ya da aralık dışı profil için null. */
+    fun command(): ByteArray? {
+        val h = heightCm ?: return null
+        val w = weightKg ?: return null
+        val a = age ?: return null
+        val x = sex ?: return null
+        return try {
+            UteProfile.build(h, w, screenSec, stepGoal, raiseWrist, a, x)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
+    companion object {
+        const val KEY = "profile"
+
+        /** Ekran 5 sn ve bileği kaldırma açık: Haylou Fun'ın varsayılanı ve kayıttaki değer. Hedef 8000: Haylou Fun varsayılanı. */
+        val DEFAULT = ProfileSetting(null, null, null, null, 5, true, 8000)
+
+        fun decode(text: String?): ProfileSetting? {
+            val p = text?.split('|') ?: return null
+            if (p.size != 7) return null
+            fun opt(i: Int, range: IntRange): Int? {
+                if (p[i].isEmpty()) return null
+                return p[i].toIntOrNull()?.takeIf { it in range }
+            }
+            val screen = p[4].toIntOrNull()?.takeIf { it in UteProfile.SCREEN_SECONDS } ?: return null
+            val wrist = when (p[5]) { "1" -> true; "0" -> false; else -> return null }
+            val goal = p[6].toIntOrNull()?.takeIf { it in UteProfile.GOAL_RANGE } ?: return null
+            return ProfileSetting(
+                heightCm = opt(0, UteProfile.HEIGHT_RANGE),
+                weightKg = opt(1, UteProfile.WEIGHT_RANGE),
+                age = opt(2, UteProfile.AGE_RANGE),
+                sex = opt(3, UteProfile.SEX_MALE..UteProfile.SEX_FEMALE),
+                screenSec = screen,
+                raiseWrist = wrist,
+                stepGoal = goal,
+            )
+        }
+    }
+}
+
 /** Bir ayar anahtarı ve değerinden saate gidecek komut. Bilinmeyen anahtar ya da bozuk değer için null. */
 object SettingCommands {
     fun build(key: String, value: String): ByteArray? = when {
         key == DndSetting.KEY -> DndSetting.decode(value)?.command()
+        key == ProfileSetting.KEY -> ProfileSetting.decode(value)?.command()
         key.startsWith("alarm") -> {
             val slot = key.removePrefix("alarm").toIntOrNull()
             val a = AlarmSetting.decode(value)

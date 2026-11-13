@@ -70,6 +70,10 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     override fun onResume() {
         super.onResume()
+        // Servis arka planda başlatılamadıysa (ör. kaydırma sonrası) kuyruktaki bildirimler şimdi gitsin.
+        if (WatchHub.service == null && Prefs.serviceEnabled(this) && Prefs.address(this) != null && hasBlePermissions()) {
+            WatchService.start(this)
+        }
         refreshAll()
     }
 
@@ -314,6 +318,7 @@ class MainActivity : Activity(), WatchHub.Observer {
     override fun onSettingsChanged() {
         refreshTop()
         watch.refresh()
+        today.refresh()
         settings.refreshWatchInfo()
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.che.ls05.protocol.AlarmSetting
 import com.che.ls05.protocol.DndSetting
+import com.che.ls05.protocol.ProfileSetting
 import com.che.ls05.protocol.SettingSync
 import com.che.ls05.protocol.SyncEntry
 import com.che.ls05.protocol.UteAlarm
@@ -57,6 +58,25 @@ object SettingsStore {
         save(c)
         WatchHub.service?.pushSettings()
         WatchHub.settingsChanged()
+    }
+
+    // ---------- Profil (05) ----------
+
+    /** Kullanıcının profil ve ekran seçimi. Hiç girilmediyse varsayılan (kişisel alanlar boş). */
+    fun profileDraft(c: Context): ProfileSetting =
+        ProfileSetting.decode(Prefs.profileDraftText(c)) ?: ProfileSetting.DEFAULT
+
+    /**
+     * Taslağı kaydeder. Saat profili bir kez onayladıysa (ilk gönderim elle yapılır) ve profil eksiksizse
+     * değişiklik ortak ayar modeliyle saate gider; aksi halde yalnızca telefonda kalır.
+     */
+    fun setProfileDraft(c: Context, p: ProfileSetting) {
+        Prefs.setProfileDraftText(c, p.encode())
+        if (Prefs.profileVerified(c) && p.personalComplete && p.command() != null) {
+            set(c, ProfileSetting.KEY, p.encode())
+        } else {
+            WatchHub.settingsChanged()
+        }
     }
 
     /**

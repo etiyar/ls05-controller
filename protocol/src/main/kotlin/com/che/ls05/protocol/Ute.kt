@@ -94,14 +94,31 @@ object UteCommand {
      * VIBRATE_TEXT olarak tanımlı. Bildirim akışının parçası olarak kanıtlı.
      */
     val VIBRATE_TEXT: ByteArray = byteArrayOf(0x06, 0, 0, 0, 0x02, 0x02, 0, 0)
+
+    /**
+     * Gelen arama titreşimi. Düzen Haylou Fun SetVibrateEvent: 06 00 00 00 [sayı] [süre] 00 00.
+     * Değer (FF FF) yalnızca kayıttan: 11 Kasım kaydında Haylou Fun gelen aramada bunu gönderdi, saat 06 00 ile onayladı.
+     * Haylou Fun 4.0.7 kodu 03 20, Hello Haylou 01 0A 02 01 gönderiyor; değerler kaynaklar arasında tutarsız (güven: orta).
+     * Durdurma (VIBRATE_STOP) her zaman ardından gönderilir.
+     */
+    val VIBRATE_CALL: ByteArray = byteArrayOf(0x06, 0, 0, 0, 0xFF.toByte(), 0xFF.toByte(), 0, 0)
+
+    /** Titreşimi durdur. Haylou Fun (arama bitince), Hello Haylou VIBRATE_END ve kayıt birebir aynı (güven: yüksek). */
+    val VIBRATE_STOP: ByteArray = byteArrayOf(0x06, 0, 0, 0, 0, 0, 0, 0)
+
+    /**
+     * Arama bitti / cevaplandı: saatteki arama ekranını kapatır. Haylou Fun UpdateMobCallStatusEvent,
+     * Hello Haylou ALERT_CALL_TEXT_STOP ve kayıt (saat 0D 04 yankısı) birebir aynı (güven: yüksek).
+     */
+    val CALL_STOP: ByteArray = byteArrayOf(0x0D, 0x04)
 }
 
 /** Bildirim metnini saatin çizebileceği hale getirir. */
 object TextSanitizer {
     /**
      * Emoji ve 4 baytlık karakterleri, birleştiricileri, kontrol karakterlerini çıkarır; satır sonlarını
-     * boşluğa çevirir. Sonuçta her karakter UTF-16'da 2 bayt olur, böylece 254 baytlık kesme hiçbir
-     * karakteri ortadan bölmez.
+     * boşluğa çevirir. Sonuçta her karakter UTF-16'da 2 bayt olur. Kesme (80 birim) ayrıca vekil çifti
+     * bölmeyecek şekilde yapılır.
      */
     fun clean(input: String): String {
         val sb = StringBuilder(input.length)
@@ -192,6 +209,12 @@ const val UTE_CHUNK_SIZE = 20
 const val MSG_TYPE_GENERIC = 4
 const val MSG_TYPE_CALL = 3
 
+/**
+ * Gelen arama metni tipi. Haylou Fun UpdateMobCallStatusEvent ve Hello Haylou ALERT_CALL_TEXT (0F 00 00 ..)
+ * aynı; 11 Kasım kaydında gelen aramada 0F 00 00 [uzunluk] görüldü (güven: yüksek).
+ */
+const val MSG_TYPE_INCOMING_CALL = 0
+
 object NotificationPacketizer {
 
     /** İlk pakette en çok 16 bayt metin (4 bayt başlık). */
@@ -201,27 +224,53 @@ object NotificationPacketizer {
     private const val NEXT_TEXT_MAX = UTE_CHUNK_SIZE - 2
 
     /**
-     * Uzunluk alanı tek bayt. Orijinal uygulama 255 bayta keser; bu tek sayıdır ve son
-     * UTF-16 karakteri ikiye bölebilir. Biz 254'te keserek karakter bütünlüğünü koruyoruz.
+     * Saatin tuttuğu metin: 80 UTF-16 birimi. Gerçek saat testi: uzun metinde saat 0F FD 04 A0
+     * ile 160 bayt aldığını bildiriyor, ekranda yaklaşık 78 karakter gösterip "..." koyuyor.
+     * Fazlasını göndermek yalnızca aktarımı uzatır.
      */
-    const val MAX_TEXT_BYTES = 254
+    const val MAX_TEXT_CHARS = 80
+    const val MAX_TEXT_BYTES = MAX_TEXT_CHARS * 2
+
+    /**
+     * Gelen arama adı: 30 bayt (15 UTF-16 birimi). Haylou Fun UpdateMobCallStatusEvent ve
+     * UpdateMobCallStatusTask ikisi de 30 bayta kesiyor.
+     */
+    const val CALL_NAME_MAX_CHARS = 15
 
     /** Orijinal uygulama gibi "başlık: gövde" birleştirir. Arama (tip 3) yalnızca gövdeyi gönderir. */
     fun joinText(title: String, body: String, type: Int = MSG_TYPE_GENERIC): String =
         if (type == MSG_TYPE_CALL) body else "$title: $body"
 
-    /** UTF-16 Big Endian, BOM'suz (Java "UnicodeBigUnmarked"). */
-    fun encode(text: String): ByteArray {
-        val bytes = text.toByteArray(Charsets.UTF_16BE)
-        return if (bytes.size <= MAX_TEXT_BYTES) bytes else bytes.copyOf(MAX_TEXT_BYTES)
+    /** Metni en çok maxChars UTF-16 birimine keser; vekil çifti ortadan bölmez. */
+    fun truncate(text: String, maxChars: Int): String {
+        if (text.length <= maxChars) return text
+        var end = maxChars
+        if (end > 0 && Character.isHighSurrogate(text[end - 1])) end--
+        return text.substring(0, end)
     }
+
+    /** UTF-16 Big Endian, BOM'suz (Java "UnicodeBigUnmarked"), en çok 80 birim. */
+    fun encode(text: String): ByteArray = truncate(text, MAX_TEXT_CHARS).toByteArray(Charsets.UTF_16BE)
 
     fun build(title: String, body: String, type: Int = MSG_TYPE_GENERIC): List<ByteArray> =
         buildFromText(joinText(title, body, type), type)
 
     fun buildFromText(text: String, type: Int = MSG_TYPE_GENERIC): List<ByteArray> {
         require(type in 1..255) { "tip 1..255 olmalı" }
-        val payload = encode(text)
+        return packets(encode(text), type)
+    }
+
+    /**
+     * Gelen arama ekranı: 0F 00 00 [uzunluk] + ad (en çok 30 bayt), 0F FD. Ad boşsa "Gelen arama".
+     * Ardından VIBRATE_CALL; arama bitince CALL_STOP ve VIBRATE_STOP gönderilir.
+     */
+    fun buildIncomingCall(name: String): List<ByteArray> {
+        val shown = name.ifBlank { "Gelen arama" }
+        return packets(truncate(shown, CALL_NAME_MAX_CHARS).toByteArray(Charsets.UTF_16BE), MSG_TYPE_INCOMING_CALL)
+    }
+
+    private fun packets(payload: ByteArray, type: Int): List<ByteArray> {
+        require(payload.size <= 255) { "metin en çok 255 bayt" }
         val cmd = UteCommand.NOTIFICATION
         val packets = mutableListOf<ByteArray>()
 
@@ -302,6 +351,21 @@ sealed class UteFrame {
     /** 1E + 6 baytlık bölümler (61FF/6102 kanalından gelir). Bölüm sayısı başlıktakiyle aynıdır. */
     data class SleepData(val segments: List<SleepSegment>) : UteFrame()
 
+    /**
+     * Saatin kumanda paketi: 12 [kod] [ek baytlar]. Kodların anlamı Haylou Fun (OnClickKeyTask + rd/b) ve
+     * Hello Haylou (a3) ile çıkarıldı; çözümü WatchKeys.action yapar. D1 0A de buraya düşer (prefix 0xD1).
+     */
+    data class WatchKey(val prefix: Int, val code: Int, val args: List<Int>) : UteFrame()
+
+    /** 12 0C …: saat, telefonun gönderdiği müzik durumunu onayladı (kayıtta 12 0C 00). */
+    data class MusicStateAck(val bytes: ByteArray) : UteFrame()
+
+    /** 05: profil paketi alındı (kayıtta tek bayt 05). */
+    object ProfileAck : UteFrame()
+
+    /** 0D 04: arama durdurma alındı (kayıtta saat aynen yankıladı). */
+    object CallStopAck : UteFrame()
+
     /** Tanınan ama anlamı önemsiz yanıtlar (ör. 18 01, 1d 02, 25 …, 01 …). */
     data class Echo(val bytes: ByteArray) : UteFrame()
     data class Unknown(val bytes: ByteArray) : UteFrame()
@@ -362,6 +426,23 @@ object UteParser {
 
             0x01.toByte(), 0x25.toByte() -> UteFrame.Echo(data)
 
+            0x12.toByte() -> when {
+                data.size < 2 -> UteFrame.Unknown(data)
+                data[1] == 0x0C.toByte() -> UteFrame.MusicStateAck(data)
+                else -> UteFrame.WatchKey(0x12, data[1].toInt() and 0xFF, (2 until data.size).map { data[it].toInt() and 0xFF })
+            }
+
+            0xD1.toByte() ->
+                if (data.size >= 2 && data[1] == 0x0A.toByte()) {
+                    UteFrame.WatchKey(0xD1, 0x0A, (2 until data.size).map { data[it].toInt() and 0xFF })
+                } else {
+                    UteFrame.Unknown(data)
+                }
+
+            0x05.toByte() -> if (data.size == 1) UteFrame.ProfileAck else UteFrame.Unknown(data)
+
+            0x0D.toByte() -> if (data.size == 2 && data[1] == 0x04.toByte()) UteFrame.CallStopAck else UteFrame.Unknown(data)
+
             UteCommand.TIME -> UteFrame.TimeAck(data)
 
             0x20.toByte() ->
@@ -399,7 +480,8 @@ object Hex {
 
     /** Bildirim metnini ve kullanıcı kimliğini loglamaz. */
     fun redacted(bytes: ByteArray): String = when {
-        bytes.isNotEmpty() && bytes[0] == UteCommand.NOTIFICATION && bytes.size > 4 ->
+        // Kısa son parçalar (0F 01 xx xx) da tek karakter taşıyabilir; 0F FD dışındaki her metin parçası gizlenir.
+        bytes.size > 2 && bytes[0] == UteCommand.NOTIFICATION && bytes[1] != UteCommand.SEGMENT_END ->
             "${of(bytes.copyOf(2))} … (${bytes.size} bayt, içerik gizli)"
         bytes.size >= 6 && bytes[0] == UteCommand.BIND && bytes[1] == 0x02.toByte() ->
             "20 02 XX XX XX XX (kimlik gizli)"

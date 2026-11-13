@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import com.che.ls05.protocol.CallTracker
 import com.che.ls05.protocol.UteFrame
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -29,6 +30,21 @@ object WatchHub {
         fun onHealthChanged() {}
     }
 
+    /** Saate gidecek şeyin türü. */
+    enum class NoteKind {
+        /** Sıradan bildirim (0F + mesaj titreşimi). */
+        MESSAGE,
+
+        /** Cevapsız arama: tip 3 bildirim olarak gider, kuyruğa alınabilir. */
+        MISSED_CALL,
+
+        /** Gelen arama ekranı (0F tip 0 + arama titreşimi). Kuyruğa alınmaz: arama bitince anlamı kalmaz. */
+        CALL_ALERT,
+
+        /** Arama cevaplandı ya da bitti (0D 04 + titreşim durdur). */
+        CALL_STOP,
+    }
+
     /** İletilecek bildirim. İçerik yalnızca bellekte ve kısa süre tutulur. */
     data class Note(
         val pkg: String,
@@ -37,7 +53,11 @@ object WatchHub {
         val body: String,
         val type: Int,
         val at: Long,
+        val kind: NoteKind = NoteKind.MESSAGE,
     )
+
+    /** Çalan aramalar (bildirim anahtarına göre). Bildirim dinleyici ve servis ana iş parçacığında kullanır. */
+    val calls = CallTracker()
 
     private val main = Handler(Looper.getMainLooper())
     private val observers = LinkedHashSet<Observer>()
@@ -127,18 +147,41 @@ object WatchHub {
         }
     }
 
-    /** Bildirim dinleyiciden gelir. Saat hazır değilse kısa kuyruğa alınır. */
+    /**
+     * Bildirim dinleyiciden gelir. Saat hazır değilse kısa kuyruğa alınır ve bağlantı hızlandırılır:
+     * servis ölüyse (ör. uygulama son uygulamalardan kaydırıldı) ön plan servisi olarak başlatılır,
+     * yaşıyor ama yeniden bağlanmayı bekliyorsa bekleme öne alınır. Kuyruk bağlanınca boşaltılır.
+     */
     fun forward(context: Context, note: Note) = onMain {
         val s = service
         if (s != null && s.isWatchReady()) {
             s.forward(note)
             return@onMain
         }
-        pending.addLast(note)
-        while (pending.size > MAX_PENDING) pending.removeFirst()
-        log("Saat hazır değil; bildirim kuyruğa alındı (${note.appLabel}, kuyruk ${pending.size}).")
-        if (s == null && Prefs.serviceEnabled(context) && Prefs.address(context) != null) {
-            WatchService.start(context)
+        when (note.kind) {
+            NoteKind.CALL_STOP -> {
+                // Saat çalıyorsa servis durumu tutar; bağlanınca durdurur.
+                s?.forward(note)
+                return@onMain
+            }
+            NoteKind.CALL_ALERT -> log("Saat hazır değil; gelen arama saate iletilemedi.")
+            else -> {
+                pending.addLast(note)
+                while (pending.size > MAX_PENDING) pending.removeFirst()
+                log("Saat hazır değil; bildirim kuyruğa alındı (${note.appLabel}, kuyruk ${pending.size}).")
+            }
+        }
+        if (s != null) {
+            s.nudgeReconnect()
+            return@onMain
+        }
+        if (Prefs.serviceEnabled(context) && Prefs.address(context) != null) {
+            log("Saat servisi çalışmıyor; başlatılıyor.")
+            if (!WatchService.start(context)) {
+                log("Servis arka planda başlatılamadı. Kuyruk uygulama açılınca gönderilir; pil kısıtlamasını kapat.")
+            }
+        } else {
+            log("Saat servisi kapalı (Durdur denmiş ya da saat seçilmemiş); kuyruk bağlanınca gönderilir.")
         }
     }
 

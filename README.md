@@ -16,7 +16,20 @@ Haylou Solar LS05 saatimi Haylou uygulamasına bağımlı olmaktan çıkarıp, �
 
 Not: Gerçek Find My / Find Hub kalabalık ağı (başkasının telefonunun saati görüp konum bildirmesi) firmware değişikliği ister. Bu, kurtarma yolu olmadan tek saati bozma riski taşıdığı için en sona bırakıldı. Telefon tarafındaki "son görülen konum" ve radar bu riski taşımadan kayıp saatin çoğu senaryosunu çözer.
 
-## Şu anki sürüm: v0.3.0 (test bekliyor)
+## Şu anki sürüm: v0.5.0 (test bekliyor)
+
+v0.4.2'nin (dört sekmeli arayüz, ortak ayar modeli, adım, nabız ve uyku) üzerine işlevsel eklemeler. Ekran görünümü değişmedi; yeni işlevler ilgili sekmelere kart ve satır olarak eklendi.
+
+- Bildirim metni 80 karaktere kesilir (saat 160 bayt alıyor, yaklaşık 78 karakter gösterip "..." koyuyor). Kesme emoji gibi iki birimlik karakterleri bölmez.
+- Gelen arama: arayan saatte arama ekranında görünür, saat titrer; cevaplayınca, reddedince ya da arama bitince saat susar (`0D 04`). Ek izin istemez, bildirim erişimiyle çalışır. WhatsApp gibi uygulamaların internet aramaları da arama kategorisindeyse aynı yoldan gider.
+- Cevapsız arama: saate bildirim olarak gider (tip 3).
+- Bildirimler sekmesi: "Gelen aramalar" ve "Cevapsız aramalar" anahtarları (varsayılan açık).
+- Saatten kumanda: oynat/duraklat, sonraki, önceki, ses aç/kıs ve "telefonu bul" (zil sesi en yüksek sesle ve titreşim, Durdur eylemli bildirim, 30 sn sonra kendiliğinden durur). Telefonun müzik durumu ve ses düzeyi saate gönderilir. Ayarlar sekmesinde "Saatten kumanda" anahtarı (varsayılan açık).
+- Saat sekmesinde "Ekran ve profil": ekran açık kalma süresi (5, 10, 15 sn), bileği kaldırınca ekran, adım hedefi ve ayrı "Profil" penceresinde boy, kilo, yaş, cinsiyet. Bunlar saate tek pakette (`05`) gider; profil girilmeden hiçbir şey gönderilmez. İlk gönderim elle ("Saate gönder"); saat onayladıktan sonra değişiklikler kendiliğinden gider. Bugün ekranındaki adım hedefi aynı değeri kullanır.
+- Uygulama son uygulamalardan kaydırıldıktan sonra: bildirim dinleyici yeniden bağlanınca saat servisi hemen başlar; servis bekleme halindeyse bekleyen bildirim yeniden bağlanmayı öne alır; uygulama açılınca servis çalışmıyorsa başlar.
+- Biçimler ve güven düzeyleri: `docs/PLAN.md` bölüm 4.2.
+
+### v0.3.0
 
 v0.2.0'ın üzerine, 12 Kasım Haylou Fun kaydından çözülen komutlarla:
 
@@ -126,7 +139,7 @@ Testten sonra Haylou Fun'ı normal kullanmak istersen yeniden aç; gerekirse saa
 
 ## Bilinen notlar
 
-- Uzun bildirimde metin 254 bayta (127 karakter) kesilir. Orijinal uygulama 255'te keser; tek sayı son karakteri bozabildiği için 254 seçildi.
+- Uzun bildirimde metin 80 UTF-16 birimine (160 bayt) kesilir; saat fazlasını almıyor (v0.5.0, gerçek saat testi). Orijinal uygulama 255 bayt gönderiyor.
 - Bildirim paketleri arasında 50 ms boşluk var. Kayıttaki akışa göre güvenli taraf; gerekirse azaltılır.
 - Tip baytı her zaman 4 (mesaj). Uygulama tipleri (WhatsApp 7, Telegram 24 vb.) Hello Haylou'dan alındı, `UteAppType` içinde; saatte simgeleri test edilmedi.
 

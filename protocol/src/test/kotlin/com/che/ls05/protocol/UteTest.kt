@@ -50,10 +50,27 @@ class UteTest {
     }
 
     @Test
-    fun lengthFieldIsTotalAndTextIsCappedEven() {
+    fun lengthFieldIsTotalAndTextIsCappedAt80Units() {
         val packets = NotificationPacketizer.buildFromText("x".repeat(500))
-        assertEquals(NotificationPacketizer.MAX_TEXT_BYTES, packets[0][3].toInt() and 0xFF)
-        assertEquals(0, NotificationPacketizer.MAX_TEXT_BYTES % 2)
+        assertEquals(160, NotificationPacketizer.MAX_TEXT_BYTES)
+        assertEquals(160, packets[0][3].toInt() and 0xFF, "saat 0F FD 04 A0 ile 160 bayt alıyor")
+        // 4+16 ilk paket, 8 devam paketi × 18 = 144, toplam 160; + bitiş
+        assertEquals(1 + 8 + 1, packets.size)
+        assertEquals(80, NotificationPacketizer.truncate("ş".repeat(81), 80).length)
+        assertEquals("abc", NotificationPacketizer.truncate("abc", 80))
+    }
+
+    @Test
+    fun truncationNeverSplitsSurrogatePair() {
+        // 79 harf + emoji (vekil çifti): 80. birim yüksek vekil olur, kesme 79'da yapılmalı.
+        val text = "a".repeat(79) + "\uD83D\uDE00" + "b"
+        val cut = NotificationPacketizer.truncate(text, 80)
+        assertEquals(79, cut.length)
+        assertTrue(!Character.isHighSurrogate(cut.last()))
+        assertEquals(158, NotificationPacketizer.encode(text).size)
+        // Emoji tam sığıyorsa korunur.
+        val fits = "a".repeat(78) + "\uD83D\uDE00"
+        assertEquals(80, NotificationPacketizer.truncate(fits, 80).length)
     }
 
     @Test
@@ -113,5 +130,9 @@ class UteTest {
         val shown = Hex.redacted(first)
         assertTrue("4C" !in shown, shown)
         assertEquals("0F FD 04 30", Hex.redacted(Hex.parse("0F FD 04 30")))
+        // Tek karakterlik son parça (0F 01 00 41) da gizlenmeli.
+        assertTrue("41" !in Hex.redacted(Hex.parse("0F 01 00 41")), "kısa parça gizlenmeli")
+        assertEquals("0F FD", Hex.redacted(Hex.parse("0F FD")))
+        assertEquals("0F 01", Hex.redacted(Hex.parse("0F 01")), "saatin parça onayı görünür kalır")
     }
 }
