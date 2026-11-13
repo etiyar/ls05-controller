@@ -164,4 +164,14 @@ class HealthLogTest {
         assertEquals(4, d.segments.size)
         assertTrue(UteParser.parse(Hex.parse("1D 02")) is UteFrame.Echo)
     }
+
+    @Test
+    fun sleepDataStoredBeforeHeaderIsStillPaired() {
+        // v0.4.0 bölümleri saklayıp başlığı saklamadı; v0.4.1 başlığı sonradan yazdı, bölümler tekrar yazılmadı.
+        val v = HealthView(listOf(e(night[1], at = 100), e(step(13, 9, 300), at = 101), e(night[0], at = 200)))
+        assertEquals(250, v.sleepFor(UteDate(2026, 11, 13))!!.sleepMin)
+        // Sayısı tutmayan bölüm grubu eşlenmez.
+        val wrong = HealthView(listOf(e("1E 17 1E 02 01 00 3C"), e(night[0])))
+        assertEquals(null, wrong.sleepFor(UteDate(2026, 11, 13)))
+    }
 }

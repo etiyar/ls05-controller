@@ -661,7 +661,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(logCard, logView, topDp = 16)
         ui.add(body, logCard, topDp = 8)
 
-        val footer = ui.caption("LS05 Controller 0.4.1")
+        val footer = ui.caption("LS05 Controller 0.4.2")
         footer.setGravity(Gravity.CENTER)
         ui.add(body, footer, topDp = 24)
 

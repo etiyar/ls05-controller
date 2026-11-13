@@ -112,20 +112,35 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
     private val sleep = LinkedHashMap<UteDate, List<SleepSegment>>()
 
     init {
-        var sleepHeader: UteFrame.SleepHeader? = null
-        val sleepParts = ArrayList<SleepSegment>()
-        fun closeSleep() {
-            val h = sleepHeader ?: return
-            if (sleepParts.isNotEmpty()) sleep[h.date] = sleepParts.toList()
-            sleepParts.clear()
-        }
+        // Uyku başlığı ve bölümleri sırayla gelir, ama kayıt deposu aynı paketi ikinci kez yazmadığı için
+        // dosyada bölümler başlıktan önce de durabilir (ör. başlığı saklamayan eski sürümün yazdığı bölümler).
+        // Önce sırayla eşlenir; bölümsüz kalan başlık, eşlenmemiş ve bölüm sayısı tutan en son bölüm grubunu alır.
+        class Header(val h: UteFrame.SleepHeader, val parts: ArrayList<SleepSegment> = ArrayList())
+        val headers = ArrayList<Header>()
+        val orphans = ArrayList<List<SleepSegment>>()
+        var current: Header? = null
         for (e in entries) {
             when (val f = UteParser.parse(e.bytes)) {
                 is UteFrame.SleepHeader -> {
-                    closeSleep()
-                    sleepHeader = if (validDate(f.date)) f else null
+                    current = if (validDate(f.date)) Header(f).also { headers += it } else null
                 }
-                is UteFrame.SleepData -> if (sleepHeader != null) sleepParts += f.segments
+                is UteFrame.SleepData -> {
+                    val c = current
+                    if (c != null && c.parts.size < c.h.count) c.parts += f.segments else orphans += f.segments
+                }
+                else -> Unit
+            }
+        }
+        for (h in headers.reversed()) {
+            if (h.parts.isEmpty()) {
+                val i = orphans.indexOfLast { it.size == h.h.count }
+                if (i >= 0) h.parts += orphans.removeAt(i)
+            }
+        }
+        for (h in headers) if (h.parts.isNotEmpty()) sleep[h.h.date] = h.parts.toList()
+
+        for (e in entries) {
+            when (val f = UteParser.parse(e.bytes)) {
                 is UteFrame.Steps -> if (validDate(f.hour.date) && f.hour.hour in 0..23) {
                     stepByHour[f.hour.date to f.hour.hour] = f.hour.total
                 }
@@ -137,7 +152,6 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
                 else -> Unit
             }
         }
-        closeSleep()
         // Canlı kayıt içinde bulunulan saatin güncel toplamıdır; geçmiş kaydı eskiyse büyük olan geçerlidir.
         for (s in live) {
             if (!validDate(s.date) || s.hour !in 0..23) continue

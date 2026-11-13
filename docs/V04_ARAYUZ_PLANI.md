@@ -220,3 +220,4 @@ Aday listesi. Her biri protokolü kayıt ya da kodla doğrulanmadan gönderilmez
 - Doğrulama: 13 Kasım gecesinde 11 bölüm, hafif toplamı 307 dk, derin 194 dk; saatin ekranında "hafif 05:07, derin 03:14". Birebir (güven: yüksek). Başlangıç 00:45, bitiş 09:06 (uygulamadaki ilk canlı adım ve kopma 09:06).
 - Saat 18 ve sonrası başlayan bölüm önceki güne ait sayılır. Tür 3 ve üstü "uyanık" kabul edilir (henüz örnek yok).
 - v0.4.1: Bugün'de uyku kartı; bağlanınca otomatik okumaya uyku dahil; uyku değerleri logda gizli; GATT haritası yalnızca kanal bulunamazsa yazılır; "Logu kopyala" son 400 satır.
+- 13 Kasım 12:56 hatası: v0.4.1'de uyku kartı "Veri yok" gösterdi. Neden: v0.4.0 `1E` bölümlerini saklamış, başlığı saklamamıştı; v0.4.1 başlığı yazdı ama aynı `1E` tekrar yazılmadı, dosyada bölüm başlıktan önce kaldı. Düzeltme (v0.4.2): bölümsüz başlık, eşlenmemiş ve bölüm sayısı tutan en son bölüm grubuyla eşlenir. Ders: depolama sırası ile geliş sırası aynı varsayılmamalı.
