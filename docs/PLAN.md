@@ -328,3 +328,10 @@ Dosya biçimi (doğrulandı):
 
 Sonuç: özel kadran yapılabilir. En güvenli yol, bu dosyanın yapısını aynen koruyup yalnızca arka plan ve önizleme görüntüsünü değiştirmek ve CRC'yi yeniden hesaplamak.
 Sıradaki karar (kapı 2): kayıttaki resmi dosyayı bizim uygulamadan birebir yüklemek.
+
+### Kadran 2. kapı (14 Kasım 01:45): GEÇTİ
+- v0.7.0 kayıttaki resmi dosyayı yükledi: 2426 paket, 44 sn, saat `1a 03 00` ile kabul etti, kadran çalışıyor.
+- `1a 01` yanıtı: `1a 01 [kadran kimliği u32 BE] [en] [boy] 00 00 10 00 00`. 12 Kasım'da kimlik `ff ff ff ff` (yerleşik kadran), şimdi `00 00 13 8a` = dosya başlığındaki 5002. Saatteki kadran buradan tanınabilir.
+- Aktarım sırasında saat `1a 03 03 06 d9` ile 1753. paketten yeniden gönderim istedi (yanıtsız yazmada kayıp). Yeniden gönderim yolu çalıştı. Ack ön eki `26` değil `1a` da olabiliyor; kod ikisini de kabul ediyor.
+- Son blokta onay gelmedi; 3 sn sonra bitiş gönderildi, saat kabul etti (Haylou Fun da onay beklemiyor).
+- Gözlem: ekran açılınca saniye ibresi birkaç saniye hızlıca yerine dönüyor. Dosya birebir aynı olduğundan büyük olasılıkla saat yazılımının davranışı; Haylou Fun ile yüklenmiş hâlinde de olup olmadığı soruldu.
