@@ -589,25 +589,40 @@ class WatchService : Service(), Ls05Ble.Listener {
         }
     }
 
-    /** Saatteki kırmızı düğme (12 02). Ayar açık ve izin verilmişse telefondaki aramayı reddeder. */
+    /**
+     * Saatteki kırmızı düğme (12 02). Önce arama bildirimindeki "Reddet" eylemi denenir (izin gerekmez);
+     * olmazsa ANSWER_PHONE_CALLS izni verilmişse TelecomManager.endCall.
+     */
     @Suppress("DEPRECATION")
     private fun rejectCallFromWatch() {
         if (!Prefs.rejectFromWatch(this)) {
             WatchHub.log("Saat aramayı reddetmek istedi (12 02). \"Saatten aramayı reddet\" kapalı; yok sayıldı.")
             return
         }
+        val action = WatchHub.declineAction
+        if (action != null && System.currentTimeMillis() - WatchHub.declineAt < 120_000) {
+            try {
+                action.send()
+                WatchHub.log("Arama saatten reddedildi (bildirimdeki \"${WatchHub.declineLabel}\" eylemi).")
+                return
+            } catch (e: Exception) {
+                WatchHub.log("Bildirim eylemi çalışmadı: ${e.javaClass.simpleName}. endCall deneniyor.")
+            }
+        } else {
+            WatchHub.log("Arama bildiriminde reddet eylemi bulunamadı; endCall deneniyor.")
+        }
         if (android.os.Build.VERSION.SDK_INT < 28 ||
             checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
-            WatchHub.log("Saat aramayı reddetmek istedi, ama arama izni yok. Bildirimler sekmesinden izin ver.")
+            WatchHub.log("Arama izni yok; arama reddedilemedi.")
             return
         }
         val ok = try {
             getSystemService(android.telecom.TelecomManager::class.java)?.endCall() ?: false
         } catch (e: Exception) {
-            WatchHub.log("Arama reddedilemedi: ${e.javaClass.simpleName}")
+            WatchHub.log("endCall hata verdi: ${e.javaClass.simpleName}")
             false
         }
-        WatchHub.log(if (ok) "Arama saatten reddedildi." else "Reddedilecek arama bulunamadı.")
+        WatchHub.log(if (ok) "Arama saatten reddedildi (endCall)." else "endCall aramayı kapatamadı.")
     }
 }

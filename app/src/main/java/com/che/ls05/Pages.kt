@@ -632,7 +632,7 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
     }
     private val rejectCalls: SwitchRow = ui.switchRow(
         "Saatten aramayı reddet",
-        "Saatteki kırmızı düğme aramayı kapatır. Telefon arama izni ister.",
+        "Saatteki kırmızı düğme aramayı kapatır.",
         Prefs.rejectFromWatch(act),
     ) { on ->
         Prefs.setRejectFromWatch(act, on)
@@ -700,9 +700,6 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         vibrate.toggle.set(Prefs.vibrate(act))
         incomingCalls.toggle.set(Prefs.incomingCalls(act))
         missedCalls.toggle.set(Prefs.missedCalls(act))
-        val canReject = android.os.Build.VERSION.SDK_INT >= 28 &&
-            act.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (Prefs.rejectFromWatch(act) && !canReject) Prefs.setRejectFromWatch(act, false)
         rejectCalls.toggle.set(Prefs.rejectFromWatch(act))
         onReady(WatchHub.ready)
         refreshApps()
@@ -902,7 +899,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(logCard, logView, topDp = 16)
         ui.add(body, logCard, topDp = 8)
 
-        val footer = ui.caption("LS05 Controller 0.5.1")
+        val footer = ui.caption("LS05 Controller 0.5.2")
         footer.setGravity(Gravity.CENTER)
         ui.add(body, footer, topDp = 24)
 

@@ -15,6 +15,12 @@ import java.util.Locale
  * Log yalnızca bellekte tutulur; bildirim içerikleri ve kimlik loga yazılmaz.
  */
 object WatchHub {
+    /** Son gelen aramanın bildirimindeki "Reddet" eylemi (saatten reddetmek için). */
+    @Volatile var declineAction: android.app.PendingIntent? = null
+    @Volatile var declineKey: String? = null
+    @Volatile var declineAt: Long = 0
+    @Volatile var declineLabel: String = ""
+
 
     interface Observer {
         fun onLog(line: String) {}

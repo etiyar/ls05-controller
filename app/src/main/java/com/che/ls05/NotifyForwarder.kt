@@ -85,6 +85,7 @@ class NotifyForwarder : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         val key = sbn?.key ?: return
+        if (WatchHub.declineKey == key) WatchHub.declineAction = null
         if (WatchHub.calls.onRemoved(key) == CallTracker.Decision.STOP) stopCallOnWatch(sbn.packageName ?: "")
     }
 
@@ -103,6 +104,7 @@ class NotifyForwarder : NotificationListenerService() {
                         WatchHub.log("Gelen arama algılandı; saate iletim kapalı.")
                         return
                     }
+                    rememberDeclineAction(n, sbn.key, now)
                     val (title, text) = texts(n)
                     // Arama uygulamaları arayanı genelde başlıkta verir; yoksa metin.
                     val name = title.ifEmpty { text }
@@ -113,7 +115,7 @@ class NotifyForwarder : NotificationListenerService() {
                     )
                 }
                 CallTracker.Decision.STOP -> stopCallOnWatch(pkg)
-                CallTracker.Decision.NONE -> Unit
+                CallTracker.Decision.NONE -> if (kind == CallKind.INCOMING) rememberDeclineAction(n, sbn.key, now)
             }
             CallKind.MISSED -> {
                 if (!forwarding || !Prefs.missedCalls(this)) return
@@ -128,6 +130,24 @@ class NotifyForwarder : NotificationListenerService() {
             }
             CallKind.NONE -> Unit
         }
+    }
+
+    /**
+     * Arama bildirimindeki "Reddet" eylemini saklar; saatteki kırmızı düğme (12 02) bunu tetikler.
+     * İzin gerektirmez. Etiket tanınmazsa ve iki eylem varsa ilki alınır (CallStyle'da reddet önce gelir).
+     */
+    private fun rememberDeclineAction(n: Notification, key: String, now: Long) {
+        val actions = n.actions ?: return
+        val words = listOf("reddet", "decline", "reject", "kapat", "sonlandır", "bitir", "hang up", "end call", "dismiss")
+        val found = actions.firstOrNull { a ->
+            val t = a.title?.toString()?.lowercase(java.util.Locale.ROOT) ?: ""
+            words.any { t.contains(it) }
+        } ?: if (actions.size == 2) actions[0] else null
+        if (found?.actionIntent == null) return
+        WatchHub.declineAction = found.actionIntent
+        WatchHub.declineKey = key
+        WatchHub.declineAt = now
+        WatchHub.declineLabel = found.title?.toString()?.take(20) ?: ""
     }
 
     private fun stopCallOnWatch(pkg: String) {

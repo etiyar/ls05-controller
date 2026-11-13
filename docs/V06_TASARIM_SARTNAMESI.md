@@ -107,3 +107,8 @@ Ekranlar yalnızca bunlarla kurulur. Yeni ekran ya da menü eklemek yeni stil ge
 3. Dört ekran.
 4. Alarm notu.
 5. Derleme, ekran görüntüsü turu, diğer ajanla ikinci değerlendirme.
+
+## 9. Ad ve simge (13 Kasım kararı)
+
+- Uygulama adı: **Finn's Watch** (paket adı `com.che.ls05` değişmez; güncelleme eskisinin üzerine kurulur).
+- Simge: kullanıcının "FW" logosu temel alınır. Yuvarlak kasa (Haylou Solar ile uyumlu), nane yeşili halka, beyaz "F", nane "W". Uyarlanabilir simge olarak vektör çizilir: arka plan katmanı düz `bg`, ön katman saat + harfler (güvenli alan 66/108 dp). Logodaki beyaz zemin ve kayış gölgeleri kullanılmaz; launcher şekli dış kesimi yapar.
