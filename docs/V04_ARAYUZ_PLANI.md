@@ -204,3 +204,11 @@ Aday listesi. Her biri protokolü kayıt ya da kodla doğrulanmadan gönderilmez
 3. Ekran süresi, bileği kaldırma, otomatik nabız ayarları (ortak ayar modeline eklenir; önce Haylou Fun kaydı gerekir).
 4. Nabız ve adım için hafta/ay görünümü (veri zaten saklanıyor).
 5. Dışa aktarma, etkinlik hatırlatıcı, stres/SpO2 (sonra).
+
+## 15. Ekran süresi ve profil paketi (13 Kasım sabahı)
+
+- Ekranın açık kalma süresi ayrı bir komut değil: Haylou Fun bunu `05` profil paketinin 5. baytında gönderiyor (`SetDeviceParamsEvent`). Aynı pakette boy, kilo, adım hedefi, bileği kaldırınca ekran, nabız uyarı sınırları, yaş, cinsiyet ve mesafe birimi var. Kayıttaki paket bu düzenle birebir uyuşuyor (güven: yüksek).
+- Sonuç: ekran süresini değiştirmek için paketin tamamı gönderilmeli. Uygulama profili bir kez kullanıcıdan alıp saklamalı, her ayar değişikliğinde tam paketi göndermeli. Bu, ortak ayar modeline tek bir "profil" anahtarı olarak eklenir; adım hedefi de buradan saate gider.
+- Profil değerleri kişisel veridir: logda gizli (`05 … (profil gizli)`), depoya girmez.
+- Gece 00:52–00:55'te Haylou Fun da saate bağlanmış; saatin onun isteklerine verdiği yanıtlar bizim bağlantımıza da düştü (`0C 02`, `1A 01`, `19 FA`, `11`). Saat yanıtları abone olan her bağlantıya gönderiyor. İki uygulama aynı anda çalışırsa birbirinin yanıtını kendi isteğine sayabilir; Haylou Fun kapalı tutulmalı.
+- Uyku: saat ekranında 13 Kasım için hafif 05:07, derin 03:14 gösterildi. Gece boyunca `1d 01` isteği yalnızca 00:58'de (uykudan önce) gönderildi, yanıt boş. Sabah yeni bir okuma gerekli.
