@@ -10,6 +10,7 @@ import com.che.ls05.protocol.CallClassifier
 import com.che.ls05.protocol.CallKind
 import com.che.ls05.protocol.CallTracker
 import com.che.ls05.protocol.MSG_TYPE_CALL
+import com.che.ls05.protocol.MSG_TYPE_GENERIC
 import com.che.ls05.protocol.MSG_TYPE_INCOMING_CALL
 import com.che.ls05.protocol.TextSanitizer
 
@@ -18,7 +19,7 @@ import com.che.ls05.protocol.TextSanitizer
  * Atlanır: kendi bildirimimiz, kalıcı bildirimler (müzik, navigasyon), grup özetleri, ön plan servisleri,
  * kullanıcının kapattığı uygulamalar ve 60 sn içindeki aynı içerik.
  * İstisna: arama bildirimleri (kalıcı olsalar da) ayrı yoldan gider: gelen arama saatte arama ekranı açar,
- * cevaplanınca ya da bitince kapatılır; cevapsız arama tip 3 bildirim olarak gider. Ek izin gerekmez.
+ * cevaplanınca ya da bitince kapatılır; cevapsız arama mesaj tipi (4) bildirim olarak gider. Ek izin gerekmez.
  * Bildirim içeriği ve arayan adı loga yazılmaz; yalnızca uygulama adı ve karakter sayısı.
  */
 class NotifyForwarder : NotificationListenerService() {
@@ -121,7 +122,8 @@ class NotifyForwarder : NotificationListenerService() {
                 if (isRepeat("missed|$pkg|${body.hashCode()}", now)) return
                 WatchHub.forward(
                     this,
-                    WatchHub.Note(pkg, appLabel(pkg), "", body, MSG_TYPE_CALL, now, WatchHub.NoteKind.MISSED_CALL),
+                    // Tip 3 saatte görünür bir bildirim bırakmadı (13 Kasım testi); mesaj tipiyle gider.
+                    WatchHub.Note(pkg, appLabel(pkg), "", body, MSG_TYPE_GENERIC, now, WatchHub.NoteKind.MISSED_CALL),
                 )
             }
             CallKind.NONE -> Unit

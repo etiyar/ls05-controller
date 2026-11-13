@@ -331,7 +331,7 @@ class WatchService : Service(), Ls05Ble.Listener {
             RemoteAction.FIND_PHONE_TOGGLE ->
                 if (PhoneFinder.isActive) PhoneFinder.stop("saatten durduruldu") else PhoneFinder.start(this)
             RemoteAction.REJECT_CALL -> {
-                WatchHub.log("Saat aramayı reddetmek istedi (12 02). Bu sürümde desteklenmiyor; yalnızca loglandı.")
+                rejectCallFromWatch()
                 return
             }
             RemoteAction.CAMERA_ENTER, RemoteAction.CAMERA_EXIT -> {
@@ -587,5 +587,27 @@ class WatchService : Service(), Ls05Ble.Listener {
             getSystemService(NotificationManager::class.java).notify(NOTIF_ID, buildNotification(text))
         } catch (_: Exception) {
         }
+    }
+
+    /** Saatteki kırmızı düğme (12 02). Ayar açık ve izin verilmişse telefondaki aramayı reddeder. */
+    @Suppress("DEPRECATION")
+    private fun rejectCallFromWatch() {
+        if (!Prefs.rejectFromWatch(this)) {
+            WatchHub.log("Saat aramayı reddetmek istedi (12 02). \"Saatten aramayı reddet\" kapalı; yok sayıldı.")
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT < 28 ||
+            checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            WatchHub.log("Saat aramayı reddetmek istedi, ama arama izni yok. Bildirimler sekmesinden izin ver.")
+            return
+        }
+        val ok = try {
+            getSystemService(android.telecom.TelecomManager::class.java)?.endCall() ?: false
+        } catch (e: Exception) {
+            WatchHub.log("Arama reddedilemedi: ${e.javaClass.simpleName}")
+            false
+        }
+        WatchHub.log(if (ok) "Arama saatten reddedildi." else "Reddedilecek arama bulunamadı.")
     }
 }

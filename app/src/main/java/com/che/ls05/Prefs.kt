@@ -50,6 +50,9 @@ object Prefs {
     fun setIncomingCalls(c: Context, value: Boolean) = p(c).edit().putBoolean("incomingCalls", value).apply()
 
     /** Cevapsız arama saate iletilsin mi (varsayılan açık). */
+    fun rejectFromWatch(c: Context): Boolean = p(c).getBoolean("rejectFromWatch", false)
+    fun setRejectFromWatch(c: Context, value: Boolean) = p(c).edit().putBoolean("rejectFromWatch", value).apply()
+
     fun missedCalls(c: Context): Boolean = p(c).getBoolean("missedCalls", true)
     fun setMissedCalls(c: Context, value: Boolean) = p(c).edit().putBoolean("missedCalls", value).apply()
 

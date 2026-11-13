@@ -630,6 +630,18 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
     private val missedCalls: SwitchRow = ui.switchRow("Cevapsız aramalar", null, Prefs.missedCalls(act)) {
         Prefs.setMissedCalls(act, it)
     }
+    private val rejectCalls: SwitchRow = ui.switchRow(
+        "Saatten aramayı reddet",
+        "Saatteki kırmızı düğme aramayı kapatır. Telefon arama izni ister.",
+        Prefs.rejectFromWatch(act),
+    ) { on ->
+        Prefs.setRejectFromWatch(act, on)
+        if (on && android.os.Build.VERSION.SDK_INT >= 28 &&
+            act.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            act.requestPermissions(arrayOf(android.Manifest.permission.ANSWER_PHONE_CALLS), 3)
+        }
+    }
 
     private val testButton: Button = ui.primary("Test bildirimi gönder") { sendTest("LS05TEST123", "LS05TEST123") }
     private val testState: TextView = ui.text("", 14f, R.color.text)
@@ -652,6 +664,8 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         ui.add(main, incomingCalls.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, missedCalls.view)
+        ui.add(main, ui.divider(), height = ui.dp(1))
+        ui.add(main, rejectCalls.view)
         ui.add(body, main, topDp = 16)
 
         ui.add(body, ui.section("Test"))
@@ -686,6 +700,10 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         vibrate.toggle.set(Prefs.vibrate(act))
         incomingCalls.toggle.set(Prefs.incomingCalls(act))
         missedCalls.toggle.set(Prefs.missedCalls(act))
+        val canReject = android.os.Build.VERSION.SDK_INT >= 28 &&
+            act.checkSelfPermission(android.Manifest.permission.ANSWER_PHONE_CALLS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (Prefs.rejectFromWatch(act) && !canReject) Prefs.setRejectFromWatch(act, false)
+        rejectCalls.toggle.set(Prefs.rejectFromWatch(act))
         onReady(WatchHub.ready)
         refreshApps()
     }
@@ -884,7 +902,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(logCard, logView, topDp = 16)
         ui.add(body, logCard, topDp = 8)
 
-        val footer = ui.caption("LS05 Controller 0.5.0")
+        val footer = ui.caption("LS05 Controller 0.5.1")
         footer.setGravity(Gravity.CENTER)
         ui.add(body, footer, topDp = 24)
 

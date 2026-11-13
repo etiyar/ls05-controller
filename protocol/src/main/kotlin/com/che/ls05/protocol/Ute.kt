@@ -239,7 +239,7 @@ object NotificationPacketizer {
 
     /** Orijinal uygulama gibi "başlık: gövde" birleştirir. Arama (tip 3) yalnızca gövdeyi gönderir. */
     fun joinText(title: String, body: String, type: Int = MSG_TYPE_GENERIC): String =
-        if (type == MSG_TYPE_CALL) body else "$title: $body"
+        if (type == MSG_TYPE_CALL || title.isBlank()) body else if (body.isBlank()) title else "$title: $body"
 
     /** Metni en çok maxChars UTF-16 birimine keser; vekil çifti ortadan bölmez. */
     fun truncate(text: String, maxChars: Int): String {

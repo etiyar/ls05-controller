@@ -24,6 +24,8 @@
 
     <!-- "Telefonu bul" titreşimi (normal izin, kullanıcıya sorulmaz) -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Saatteki kırmızı düğmeyle aramayı reddetmek için (isteğe bağlı, kullanıcı açarsa istenir) -->
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
 
     <!-- Bildirim gönderen uygulamaların adlarını göstermek için (Android 11+ paket görünürlüğü) -->
     <queries>

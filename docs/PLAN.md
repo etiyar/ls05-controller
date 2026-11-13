@@ -287,3 +287,13 @@ Açık kalanlar:
 
 - Saat güncelleme almıyor; bozulursa yedeği yok. Kural 1 ve 2 bu yüzden pazarlıksız.
 - Yanlış kimlikle doğrulama saatte yeni sahip onayı açabilir; onaylanırsa Haylou Fun bağı kopabilir veya veriler silinebilir. Kural 6 ve 7.
+
+## 13 Kasım akşam: v0.5.0 cihaz testleri
+
+- Gelen arama: ad görünüyor, saat titriyor; telefondan cevap ve red sonrası `0D 04` ile susuyor. GEÇTİ.
+- Cevapsız arama: tip 3 bildirim saat tarafından alındı (`0F FD 03 28`) ama saatte görünür bir kayıt bırakmadı. v0.5.1: mesaj tipiyle (4) gönderilir.
+- Saatteki kırmızı düğme `12 02` gönderiyor (doğrulandı). v0.5.1: isteğe bağlı "Saatten aramayı reddet" (ANSWER_PHONE_CALLS, TelecomManager.endCall).
+- Müzik kumandası `12 07` oynat/duraklat, `12 08` sonraki, `12 09` önceki: GEÇTİ (kodlar saatle doğrulandı). Ses ve telefonu bul denenmedi.
+- Profil `05`: ilk kontrollü gönderim onaylandı, ekran süresi 10 sn saatte doğrulandı. GEÇTİ.
+- Kaydırıp kapatma sonrası WhatsApp bildirimi: GEÇTİ (1/1).
+- 80 karakter: saatte yaklaşık 78 karakter + "..." GEÇTİ. Not: noktasız "ı" saat yazı tipinde boşluklu görünüyor (saat yazılımı); isteğe bağlı harf sadeleştirme ileride.
