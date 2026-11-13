@@ -199,7 +199,7 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     // ---------- Kadran ----------
 
-    val face by lazy {
+    val face: FaceUpload by lazy {
         FaceUpload(ble) {
             if (face.phase == FaceUpload.Phase.DONE && WatchHub.faceId.isNotEmpty()) {
                 Prefs.setCurrentFace(this, WatchHub.faceId)
