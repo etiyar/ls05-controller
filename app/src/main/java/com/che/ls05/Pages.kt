@@ -48,6 +48,8 @@ abstract class Page(val act: MainActivity, val title: String) {
 
 class TodayPage(act: MainActivity) : Page(act, "Bugün") {
 
+    private fun dur(min: Int): String = if (min >= 60) "${min / 60} sa ${min % 60} dk" else "$min dk"
+
     private val banner: Banner = ui.banner("", "Ayarlar") { act.selectTab(3) }
     private val stepNum: TextView = ui.big("")
     private val stepSub: TextView = ui.caption("")
@@ -57,6 +59,9 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
     private val heartTime: TextView = ui.caption("")
     private val heartRange: TextView = ui.caption("")
     private val syncText: TextView = ui.caption("")
+    private val sleepNum: TextView = ui.big("")
+    private val sleepParts: TextView = ui.caption("")
+    private val sleepSpan: TextView = ui.caption("")
 
     init {
         ui.add(body, banner.view, topDp = 8)
@@ -78,6 +83,13 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         ui.add(heart, heartTime, topDp = 8)
         ui.add(heart, heartRange, topDp = 4)
         ui.add(body, heart, topDp = 16)
+
+        val sleep = ui.card()
+        ui.add(sleep, ui.cardTitle("Uyku"))
+        ui.add(sleep, sleepNum, topDp = 8)
+        ui.add(sleep, sleepParts, topDp = 8)
+        ui.add(sleep, sleepSpan, topDp = 4)
+        ui.add(body, sleep, topDp = 16)
 
         val sync = ui.card()
         val r = ui.horizontal()
@@ -138,6 +150,19 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
             heartRange.visibility = View.VISIBLE
         } else {
             heartRange.visibility = View.GONE
+        }
+
+        val night = view.sleepFor(today)
+        if (night == null || night.sleepMin <= 0) {
+            ui.setBig(sleepNum, null, "Veri yok")
+            sleepParts.text = "Bu gecenin uykusu henüz okunmadı."
+            sleepSpan.visibility = View.GONE
+        } else {
+            ui.setBig(sleepNum, dur(night.sleepMin), "")
+            sleepParts.text = "Derin ${dur(night.deepMin)} · hafif ${dur(night.lightMin)}" +
+                if (night.awakeMin > 0) " · uyanık ${dur(night.awakeMin)}" else ""
+            sleepSpan.text = "${Fmt.hm(night.start.hour, night.start.minute)} → ${Fmt.hm(night.end.hour, night.end.minute)}"
+            sleepSpan.visibility = View.VISIBLE
         }
 
         val last = Prefs.lastSync(act)
@@ -636,7 +661,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(logCard, logView, topDp = 16)
         ui.add(body, logCard, topDp = 8)
 
-        val footer = ui.caption("LS05 Controller 0.4.0")
+        val footer = ui.caption("LS05 Controller 0.4.1")
         footer.setGravity(Gravity.CENTER)
         ui.add(body, footer, topDp = 24)
 
@@ -784,7 +809,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
 
     private fun copyLog() {
         val cm = act.getSystemService(ClipboardManager::class.java)
-        cm.setPrimaryClip(ClipData.newPlainText("LS05 log", WatchHub.logLines.joinToString("\n")))
-        act.toast("Log kopyalandı (bildirim içerikleri gizli, MAC maskeli).")
+        val lines = WatchHub.logLines.toList().takeLast(400)
+        cm.setPrimaryClip(ClipData.newPlainText("LS05 log", lines.joinToString("\n")))
+        act.toast("Son ${lines.size} satır kopyalandı (bildirim içerikleri gizli, MAC maskeli).")
     }
 }

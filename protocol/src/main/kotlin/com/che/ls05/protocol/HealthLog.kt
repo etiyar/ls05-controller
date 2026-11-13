@@ -18,11 +18,48 @@ class HealthEntry(val receivedSec: Long, val offsetMin: Int, val bytes: ByteArra
 
 data class HeartPoint(val at: LocalDateTime, val bpm: Int)
 
+/**
+ * Uyku bölümü: [saat] [dakika] [tür] [?] [süre dk, 2 bayt]. Tür 1 derin, 2 hafif, diğerleri uyanık sayılır.
+ * Güven: yüksek. 13 Kasım gecesi 11 bölüm birbirini dakikası dakikasına izledi; tür 2 toplamı 307 dk
+ * (saatte "hafif 05:07"), tür 1 toplamı 194 dk (saatte "derin 03:14").
+ */
+data class SleepSegment(val hour: Int, val minute: Int, val type: Int, val minutes: Int) {
+    companion object {
+        const val DEEP = 1
+        const val LIGHT = 2
+
+        fun parseAll(b: ByteArray, from: Int): List<SleepSegment> {
+            val out = ArrayList<SleepSegment>()
+            var i = from
+            while (i + 6 <= b.size) {
+                val h = b[i].toInt() and 0xFF
+                val m = b[i + 1].toInt() and 0xFF
+                val dur = ((b[i + 4].toInt() and 0xFF) shl 8) or (b[i + 5].toInt() and 0xFF)
+                if (h in 0..23 && m in 0..59 && dur in 1..1440) out += SleepSegment(h, m, b[i + 2].toInt() and 0xFF, dur)
+                i += 6
+            }
+            return out
+        }
+    }
+}
+
+/** Bir gecenin özeti. date: uyanılan gün. */
+data class SleepNight(
+    val date: UteDate,
+    val start: LocalDateTime,
+    val end: LocalDateTime,
+    val deepMin: Int,
+    val lightMin: Int,
+    val awakeMin: Int,
+) {
+    val sleepMin get() = deepMin + lightMin
+}
+
 object HealthLog {
 
     /**
      * Saklanacak kayıt mı? Saklananlar: saatlik adım geçmişi (0a), nabız bloğu, nabız özeti (18 04),
-     * sıfır olmayan canlı nabız (18 03), uyku kaydı (1e, henüz çözülmedi).
+     * sıfır olmayan canlı nabız (18 03), uyku başlığı (1d 01) ve uyku bölümleri (1e).
      * Saklanmayanlar: saniyede bir gelen canlı adım (09), bitiş işaretleri, yankılar.
      */
     fun shouldStore(b: ByteArray): Boolean {
@@ -32,7 +69,9 @@ object HealthLog {
             is UteFrame.HeartBlockFrame -> true
             is UteFrame.HeartSummary -> true
             is UteFrame.HeartLive -> f.bpm in VALID_BPM
-            else -> b[0] == 0x1E.toByte() && b.size > 2
+            is UteFrame.SleepHeader -> f.count > 0
+            is UteFrame.SleepData -> f.segments.isNotEmpty()
+            else -> false
         }
     }
 
@@ -70,9 +109,23 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
     var heartSummary: UteFrame.HeartSummary? = null
         private set
 
+    private val sleep = LinkedHashMap<UteDate, List<SleepSegment>>()
+
     init {
+        var sleepHeader: UteFrame.SleepHeader? = null
+        val sleepParts = ArrayList<SleepSegment>()
+        fun closeSleep() {
+            val h = sleepHeader ?: return
+            if (sleepParts.isNotEmpty()) sleep[h.date] = sleepParts.toList()
+            sleepParts.clear()
+        }
         for (e in entries) {
             when (val f = UteParser.parse(e.bytes)) {
+                is UteFrame.SleepHeader -> {
+                    closeSleep()
+                    sleepHeader = if (validDate(f.date)) f else null
+                }
+                is UteFrame.SleepData -> if (sleepHeader != null) sleepParts += f.segments
                 is UteFrame.Steps -> if (validDate(f.hour.date) && f.hour.hour in 0..23) {
                     stepByHour[f.hour.date to f.hour.hour] = f.hour.total
                 }
@@ -84,6 +137,7 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
                 else -> Unit
             }
         }
+        closeSleep()
         // Canlı kayıt içinde bulunulan saatin güncel toplamıdır; geçmiş kaydı eskiyse büyük olan geçerlidir.
         for (s in live) {
             if (!validDate(s.date) || s.hour !in 0..23) continue
@@ -125,6 +179,27 @@ class HealthView(entries: List<HealthEntry>, live: Collection<StepHour> = emptyL
         heart.filter { notAfter == null || !it.at.isAfter(notAfter) }.maxByOrNull { it.at }
 
     fun heartPoints(): List<HeartPoint> = heart.sortedBy { it.at }
+
+    /**
+     * O gün uyanılan gecenin özeti. Bölüm saati 18 ve sonrasıysa bir önceki güne aittir.
+     * Aynı bölüm iki kez geldiyse bir kez sayılır.
+     */
+    fun sleepFor(day: UteDate): SleepNight? {
+        val segs = sleep[day]?.distinct() ?: return null
+        if (segs.isEmpty()) return null
+        val wake = LocalDateTime.of(day.year, day.month, day.day, 0, 0)
+        fun startOf(s: SleepSegment): LocalDateTime =
+            (if (s.hour >= 18) wake.minusDays(1) else wake).withHour(s.hour).withMinute(s.minute)
+        val sorted = segs.sortedBy { startOf(it) }
+        return SleepNight(
+            date = day,
+            start = startOf(sorted.first()),
+            end = sorted.maxOf { startOf(it).plusMinutes(it.minutes.toLong()) },
+            deepMin = segs.filter { it.type == SleepSegment.DEEP }.sumOf { it.minutes },
+            lightMin = segs.filter { it.type == SleepSegment.LIGHT }.sumOf { it.minutes },
+            awakeMin = segs.filter { it.type != SleepSegment.DEEP && it.type != SleepSegment.LIGHT }.sumOf { it.minutes },
+        )
+    }
 }
 
 /** Uzun bildirimde saatin kaç karakter gösterdiğini ölçmek için cetvel metinleri (127 karakterin altında). */

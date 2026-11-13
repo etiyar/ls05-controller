@@ -212,3 +212,11 @@ Aday listesi. Her biri protokolü kayıt ya da kodla doğrulanmadan gönderilmez
 - Profil değerleri kişisel veridir: logda gizli (`05 … (profil gizli)`), depoya girmez.
 - Gece 00:52–00:55'te Haylou Fun da saate bağlanmış; saatin onun isteklerine verdiği yanıtlar bizim bağlantımıza da düştü (`0C 02`, `1A 01`, `19 FA`, `11`). Saat yanıtları abone olan her bağlantıya gönderiyor. İki uygulama aynı anda çalışırsa birbirinin yanıtını kendi isteğine sayabilir; Haylou Fun kapalı tutulmalı.
 - Uyku: saat ekranında 13 Kasım için hafif 05:07, derin 03:14 gösterildi. Gece boyunca `1d 01` isteği yalnızca 00:58'de (uykudan önce) gönderildi, yanıt boş. Sabah yeni bir okuma gerekli.
+
+## 16. Uyku çözüldü (13 Kasım 09:27), v0.4.1
+
+- İstek `1D 01 [tarih] 00`. Yanıt: `1D 01 [uyanılan gün] [bölüm sayısı]` (6002), sonra `1E` + 6 baytlık bölümler (6102), son `1D 02`.
+- Bölüm: `[saat] [dakika] [tür] [01] [süre dk, 2 bayt]`. Tür 1 derin, 2 hafif. Bölümler birbirini kesintisiz izliyor.
+- Doğrulama: 13 Kasım gecesinde 11 bölüm, hafif toplamı 307 dk, derin 194 dk; saatin ekranında "hafif 05:07, derin 03:14". Birebir (güven: yüksek). Başlangıç 00:45, bitiş 09:06 (uygulamadaki ilk canlı adım ve kopma 09:06).
+- Saat 18 ve sonrası başlayan bölüm önceki güne ait sayılır. Tür 3 ve üstü "uyanık" kabul edilir (henüz örnek yok).
+- v0.4.1: Bugün'de uyku kartı; bağlanınca otomatik okumaya uyku dahil; uyku değerleri logda gizli; GATT haritası yalnızca kanal bulunamazsa yazılır; "Logu kopyala" son 400 satır.

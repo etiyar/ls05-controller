@@ -281,14 +281,18 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             log("Servis keşfi başarısız: $statusCode")
             return
         }
-        log("--- GATT haritası ---")
-        for (s in g.services) {
-            log("Servis ${s.uuid}")
-            for (c in s.characteristics) {
-                log("   char ${c.uuid}  [${propsText(c.properties)}]")
+        // Harita yalnızca beklenen kanallar bulunamazsa yazılır; her bağlantıda logu doldurmasın.
+        fun dumpMap() {
+            log("--- GATT haritası ---")
+            for (s in g.services) {
+                log("Servis ${s.uuid}")
+                for (c in s.characteristics) {
+                    log("   char ${c.uuid}  [${propsText(c.properties)}]")
+                }
             }
+            log("---------------------")
         }
-        log("---------------------")
+        log("Servisler bulundu (${g.services.size}).")
 
         batteryChar = g.getService(UUID.fromString(UteUuids.BATTERY_SERVICE))
             ?.getCharacteristic(UUID.fromString(UteUuids.BATTERY_LEVEL))
@@ -316,6 +320,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
         log("Dinlenecek kanallar: ${listeners.joinToString { shortUuid(it.uuid) }.ifEmpty { "YOK" }}, standart pil ${if (batteryChar != null) "VAR" else "YOK"}")
 
         if (candidates.isEmpty() || listeners.isEmpty()) {
+            dumpMap()
             status("Beklenen UUID'ler yok")
             log("Komut veya dinleme kanalı bulunamadı. GATT haritasını kopyalayıp gönder; hiçbir komut yazılmayacak.")
             return
@@ -445,6 +450,8 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.HeartBlockFrame -> log("   = Nabız bloğu ${frame.block.date.day}.${frame.block.date.month} saat ${frame.block.endHour}: ${frame.block.values.count { it != null }} ölçüm")
             is UteFrame.HeartHistoryEnd -> log("   = Nabız geçmişi bitti")
             is UteFrame.RealHeart -> log("   = Nabız ölçüm paketi (anlamı doğrulanmadı)")
+            is UteFrame.SleepHeader -> log("   = Uyku başlığı ${frame.date.day}.${frame.date.month}: ${frame.count} bölüm")
+            is UteFrame.SleepData -> log("   = Uyku bölümleri alındı: ${frame.segments.size}")
             is UteFrame.Echo -> Unit
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
@@ -458,10 +465,12 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.HeartSummary -> 8
             is UteFrame.HeartBlockFrame -> 6
             is UteFrame.RealHeart -> 2
+            is UteFrame.SleepData -> 1
             else -> return Hex.redacted(value)
         }
         val n = minOf(keep, value.size)
-        return "${Hex.of(value.copyOf(n))} … (${value.size} bayt, nabız değeri gizli)"
+        val what = if (frame is UteFrame.SleepData) "uyku değerleri" else "nabız değeri"
+        return "${Hex.of(value.copyOf(n))} … (${value.size} bayt, $what gizli)"
     }
 
     // ---------- Komutlar ----------

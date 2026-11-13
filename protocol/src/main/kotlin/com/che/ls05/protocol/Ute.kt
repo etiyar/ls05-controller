@@ -296,6 +296,12 @@ sealed class UteFrame {
     /** 16 …: saatteki anlık nabız ölçümüyle ilgili paket. Değer yalnızca 16 xx 00 [nabız] biçiminde gelir (O). */
     data class RealHeart(val bpm: Int?, val bytes: ByteArray) : UteFrame()
 
+    /** 1D 01 [tarih] [bölüm sayısı]: uyku kaydı başlığı. Tarih uyanılan gündür. */
+    data class SleepHeader(val date: UteDate, val count: Int) : UteFrame()
+
+    /** 1E + 6 baytlık bölümler (61FF/6102 kanalından gelir). Bölüm sayısı başlıktakiyle aynıdır. */
+    data class SleepData(val segments: List<SleepSegment>) : UteFrame()
+
     /** Tanınan ama anlamı önemsiz yanıtlar (ör. 18 01, 1d 02, 25 …, 01 …). */
     data class Echo(val bytes: ByteArray) : UteFrame()
     data class Unknown(val bytes: ByteArray) : UteFrame()
@@ -346,7 +352,15 @@ object UteParser {
                 data,
             )
 
-            0x01.toByte(), 0x1D.toByte(), 0x25.toByte() -> UteFrame.Echo(data)
+            0x1D.toByte() ->
+                if (data.size >= 7 && data[1] == 0x01.toByte()) UteFrame.SleepHeader(UteDate.read(data, 2), data[6].toInt() and 0xFF)
+                else UteFrame.Echo(data)
+
+            0x1E.toByte() ->
+                if (data.size >= 7) UteFrame.SleepData(SleepSegment.parseAll(data, 1))
+                else UteFrame.Unknown(data)
+
+            0x01.toByte(), 0x25.toByte() -> UteFrame.Echo(data)
 
             UteCommand.TIME -> UteFrame.TimeAck(data)
 

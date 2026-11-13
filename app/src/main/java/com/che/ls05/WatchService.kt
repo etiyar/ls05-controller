@@ -364,7 +364,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         if (Prefs.autoTime(this)) sendTime("otomatik saat eşitleme (04)")
         flushPending()
         pushSettings()
-        if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(false)
+        if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(true)
     }
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {

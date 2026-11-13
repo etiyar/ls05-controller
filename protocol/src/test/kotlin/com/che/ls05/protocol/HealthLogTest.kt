@@ -24,7 +24,9 @@ class HealthLogTest {
         assertTrue(HealthLog.shouldStore(Hex.parse("18 04 07 EA 0B 0C 07 10 64 32 46")))
         assertTrue(HealthLog.shouldStore(Hex.parse("18 07 EA 0B 0C 08 FF FF FF FF FF 3C FF FF FF FF FF FF")))
         assertTrue(!HealthLog.shouldStore(Hex.parse("18 FD A2")))
-        assertTrue(HealthLog.shouldStore(Hex.parse("1E 01 02 03")))
+        assertTrue(HealthLog.shouldStore(Hex.parse("1E 17 1E 02 01 00 3C")))
+        assertTrue(!HealthLog.shouldStore(Hex.parse("1E 00")))
+        assertTrue(HealthLog.shouldStore(Hex.parse("1D 01 07 EA 0B 0D 02")))
         assertTrue(!HealthLog.shouldStore(Hex.parse("1D 02")))
         assertTrue(!HealthLog.shouldStore(Hex.parse("06 01")))
     }
@@ -123,5 +125,43 @@ class HealthLogTest {
         assertTrue(LengthTest.turkishRuler().startsWith("ş01ğ02ı03"))
         assertTrue(NotificationPacketizer.encode(LengthTest.turkishRuler()).size <= NotificationPacketizer.MAX_TEXT_BYTES)
         assertEquals(LengthTest.turkishRuler(), TextSanitizer.clean(LengthTest.turkishRuler()), "temizleyici cetveli bozmamalı")
+    }
+
+    // Yapay gece; düzen 13 Kasım kaydıyla aynı (başlık 1D 01 + tarih + sayı, 1E + 6 baytlık bölümler).
+    private val night = listOf(
+        "1D 01 07 EA 0B 0D 04",
+        "1E 17 1E 02 01 00 3C 00 1E 01 01 00 5A 02 00 02 01 00 64 03 28 03 01 00 0A",
+    )
+
+    @Test
+    fun sleepNightAcrossMidnight() {
+        val v = HealthView(night.map { e(it) })
+        val n = v.sleepFor(UteDate(2026, 11, 13))!!
+        assertEquals(LocalDateTime.of(2026, 11, 12, 23, 30), n.start)
+        assertEquals(LocalDateTime.of(2026, 11, 13, 3, 50), n.end)
+        assertEquals(90, n.deepMin)
+        assertEquals(160, n.lightMin)
+        assertEquals(10, n.awakeMin)
+        assertEquals(250, n.sleepMin)
+        assertEquals(null, v.sleepFor(UteDate(2026, 11, 12)))
+    }
+
+    @Test
+    fun sleepRepeatedReadCountsOnceAndNeedsHeader() {
+        val twice = HealthView((night + night).map { e(it) })
+        assertEquals(250, twice.sleepFor(UteDate(2026, 11, 13))!!.sleepMin)
+        val noHeader = HealthView(listOf(e(night[1])))
+        assertEquals(null, noHeader.sleepFor(UteDate(2026, 11, 13)))
+    }
+
+    @Test
+    fun sleepFramesParse() {
+        val h = UteParser.parse(Hex.parse(night[0])) as UteFrame.SleepHeader
+        assertEquals(UteDate(2026, 11, 13), h.date)
+        assertEquals(4, h.count)
+        val d = UteParser.parse(Hex.parse(night[1])) as UteFrame.SleepData
+        assertEquals(SleepSegment(23, 30, 2, 60), d.segments.first())
+        assertEquals(4, d.segments.size)
+        assertTrue(UteParser.parse(Hex.parse("1D 02")) is UteFrame.Echo)
     }
 }
