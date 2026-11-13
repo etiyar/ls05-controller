@@ -22,6 +22,7 @@ import com.che.ls05.protocol.AlarmReminder
 import com.che.ls05.protocol.AlarmSetting
 import com.che.ls05.protocol.DndSetting
 import com.che.ls05.protocol.HealthLog
+import com.che.ls05.protocol.HealthView
 import com.che.ls05.protocol.LengthTest
 import com.che.ls05.protocol.NotificationState
 import com.che.ls05.protocol.ProfileSetting
@@ -85,6 +86,15 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
 
     private val syncText: TextView = ui.caption("")
 
+    // Geçmiş: 7 veya 30 günlük adım, uyku ve nabız.
+    private var span = 7
+    private val stepTrend = BarsView(act)
+    private val sleepTrend = BarsView(act)
+    private val heartTrend = BarsView(act)
+    private val stepAvg: TextView = ui.caption("")
+    private val sleepAvg: TextView = ui.caption("")
+    private val heartAvg: TextView = ui.caption("")
+
     init {
         ui.add(body, banner.view, topDp = 4)
 
@@ -135,12 +145,68 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         ui.add(legend, awakeText, topDp = 4)
         ui.add(body, legend, topDp = 10)
 
+        val trends = ui.card()
+        val head = ui.horizontal()
+        ui.add(head, ui.cardTitle("Geçmiş"), width = 0, weight = 1f)
+        ui.add(head, ui.segmented(listOf("7 gün", "30 gün"), 0) { i ->
+            span = if (i == 0) 7 else 30
+            refresh()
+        }.view, width = Ui.WRAP)
+        ui.add(trends, head)
+        trendBlock(trends, R.drawable.ic_today, R.color.accent, "Adım", stepAvg, stepTrend, 16)
+        trendBlock(trends, R.drawable.ic_moon, R.color.sleep_light, "Uyku", sleepAvg, sleepTrend, 20)
+        trendBlock(trends, R.drawable.ic_heart, R.color.heart, "Nabız", heartAvg, heartTrend, 20)
+        ui.add(body, trends, topDp = 10)
+
         val sync = ui.card(padDp = 16, padVDp = 10)
         val r = ui.horizontal()
         ui.add(r, syncText, width = 0, weight = 1f)
         ui.add(r, ui.secondary("Verileri yenile") { requestData() }, width = Ui.WRAP, leftDp = 12)
         ui.add(sync, r)
         ui.add(body, sync, topDp = 10)
+    }
+
+    private fun trendBlock(card: LinearLayout, icon: Int, colorId: Int, title: String, avg: TextView, chart: BarsView, topDp: Int) {
+        val row = ui.horizontal()
+        ui.add(row, ui.iconTitle(icon, colorId, title), width = 0, weight = 1f)
+        ui.add(row, avg, width = Ui.WRAP)
+        ui.add(card, row, topDp = topDp)
+        ui.add(card, chart, topDp = 8, height = ui.dp(72))
+    }
+
+    /** Günlük geçmiş grafikleri. Son sütun bugün (uykuda bu sabah biten gece). Ortalamalar yalnızca verisi olan günlerden. */
+    private fun refreshTrends(view: HealthView, today: java.time.LocalDate) {
+        val days = (span - 1 downTo 0).map { today.minusDays(it.toLong()) }
+        val names = arrayOf("Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz")
+        val labels = Array<String?>(span) { i ->
+            val d = days[i]
+            when {
+                span == 7 -> names[d.dayOfWeek.value - 1]
+                (span - 1 - i) % 7 == 0 -> d.dayOfMonth.toString()
+                else -> null
+            }
+        }
+        fun ute(d: java.time.LocalDate) = UteDate(d.year, d.monthValue, d.dayOfMonth)
+
+        val steps = IntArray(span) { view.stepsForDay(ute(days[it])) ?: 0 }
+        stepTrend.setDaily(steps, span - 1, labels)
+        val stepDays = steps.filter { it > 0 }
+        stepAvg.text = if (stepDays.isEmpty()) "Veri yok" else "Ort. ${Fmt.num(stepDays.average().toInt())}"
+
+        val sleep = IntArray(span) { view.sleepFor(ute(days[it]))?.sleepMin ?: 0 }
+        sleepTrend.setDaily(sleep, span - 1, labels)
+        val sleepDays = sleep.filter { it > 0 }
+        sleepAvg.text = if (sleepDays.isEmpty()) "Veri yok" else "Ort. ${dur(sleepDays.average().toInt())}"
+
+        val byDay = view.heartPoints().filter { it.bpm in HealthLog.VALID_BPM }.groupBy { it.at.toLocalDate() }
+        val heart = IntArray(span) { i -> byDay[days[i]]?.map { it.bpm }?.average()?.toInt() ?: 0 }
+        heartTrend.setDaily(heart, span - 1, labels)
+        val heartDays = heart.filter { it > 0 }
+        heartAvg.text = if (heartDays.isEmpty()) "Veri yok" else "Ort. ${heartDays.average().toInt()} bpm"
+
+        stepTrend.contentDescription = "Günlük adım, son $span gün"
+        sleepTrend.contentDescription = "Gecelik uyku, son $span gün"
+        heartTrend.contentDescription = "Günlük ortalama nabız, son $span gün"
     }
 
     private fun legendItem(row: LinearLayout, colorId: Int, label: TextView, leftDp: Int) {
@@ -252,6 +318,8 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
             }
             legend.visibility = View.VISIBLE
         }
+
+        refreshTrends(view, now.toLocalDate())
 
         syncText.text = if (last == 0L) "Son eşitleme: henüz yok" else "Son eşitleme: ${Fmt.dayMs(last)}"
     }

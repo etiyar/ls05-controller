@@ -71,7 +71,10 @@ class RingView(context: Context) : View(context) {
     }
 }
 
-/** 24 saatlik sütun grafiği. İçinde bulunulan saat nane, adım olan diğer saatler soluk gri. 0 değeri kısa bir çizgidir. */
+/**
+ * Sütun grafiği. Varsayılan 24 saat (etiket 6 saatte bir); [setDaily] ile günlük görünüm.
+ * Vurgulanan sütun nane, değeri olan diğerleri soluk gri. 0 değeri kısa bir çizgidir.
+ */
 class BarsView(context: Context) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -82,6 +85,7 @@ class BarsView(context: Context) : View(context) {
     private val box = RectF()
     private var values = IntArray(24)
     private var current = -1
+    private var labels: Array<String?>? = null
 
     init {
         bar.color = context.getColor(R.color.muted)
@@ -96,6 +100,15 @@ class BarsView(context: Context) : View(context) {
     fun set(hourly: IntArray, currentHour: Int) {
         values = hourly.copyOf()
         current = currentHour
+        labels = null
+        invalidate()
+    }
+
+    /** Günlük görünüm: etiketler sütunun ortasına yazılır; null olan sütun etiketsiz. */
+    fun setDaily(daily: IntArray, highlight: Int, dayLabels: Array<String?>) {
+        values = daily.copyOf()
+        current = highlight
+        labels = dayLabels.copyOf()
         invalidate()
     }
 
@@ -123,6 +136,18 @@ class BarsView(context: Context) : View(context) {
                 else -> empty
             }
             canvas.drawRoundRect(box, radius, radius, p)
+        }
+        val custom = labels
+        if (custom != null) {
+            label.textAlign = Paint.Align.CENTER
+            for (i in 0 until minOf(n, custom.size)) {
+                val text = custom[i] ?: continue
+                val half = label.measureText(text) / 2f
+                val x = (slot * i + slot / 2f).coerceIn(half, width - half)
+                canvas.drawText(text, x, height - fm.descent, label)
+            }
+            label.textAlign = Paint.Align.LEFT
+            return
         }
         var hour = 0
         while (hour < n) {
