@@ -335,3 +335,8 @@ Sıradaki karar (kapı 2): kayıttaki resmi dosyayı bizim uygulamadan birebir y
 - Aktarım sırasında saat `1a 03 03 06 d9` ile 1753. paketten yeniden gönderim istedi (yanıtsız yazmada kayıp). Yeniden gönderim yolu çalıştı. Ack ön eki `26` değil `1a` da olabiliyor; kod ikisini de kabul ediyor.
 - Son blokta onay gelmedi; 3 sn sonra bitiş gönderildi, saat kabul etti (Haylou Fun da onay beklemiyor).
 - Gözlem: ekran açılınca saniye ibresi birkaç saniye hızlıca yerine dönüyor. Dosya birebir aynı olduğundan büyük olasılıkla saat yazılımının davranışı; Haylou Fun ile yüklenmiş hâlinde de olup olmadığı soruldu.
+
+### Kadran yazıcı cihaz testleri (14 Kasım 13:19): 1 ve 2 GEÇTİ
+- Test 1: FW Logo, FaceWriter ile yeniden yazılmış, kimlik 0xF0F0. Saat kabul etti.
+- Test 2: ibresiz dijital (tür 17, 10, 4, 5), FaceWriter çıktısı. Saat gerçek saati doğru gösterdi (13:19): 14 karelik "-,/0123456789:" sırası, hücre yerleşimi ve ibresiz kadran doğrulandı.
+- Sıradaki: aşama 1 .tbwf derlemesi (Mus ya da 1526); ortak sprite ve katman sırası ayrı denenecek.
