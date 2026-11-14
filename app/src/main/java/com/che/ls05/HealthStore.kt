@@ -127,6 +127,35 @@ object HealthStore {
         }
     }
 
+    /**
+     * Dışa aktarma için son [days] günün dosyaları. Ana iş parçacığında çağrılır; dönen işlev arka planda
+     * çalıştırılabilir, dosyaları yalnızca okur ve bellekteki duruma dokunmaz. [view] yalnızca son 3 günü tuttuğu için
+     * uzun aralık dosyalardan okunur.
+     */
+    fun reader(c: Context, days: Long): () -> HealthView {
+        init(c)
+        val d = dir
+        val liveCopy = live.values.toList()
+        val today = today()
+        return {
+            val list = ArrayList<HealthEntry>()
+            val known = HashSet<String>()
+            if (d != null) {
+                for (back in days - 1 downTo 0L) {
+                    val f = fileFor(d, today.minusDays(back))
+                    try {
+                        if (!f.exists()) continue
+                        for (e in HealthLog.parseAll(f.readText(Charsets.UTF_8))) {
+                            if (known.add(e.hex)) list += e
+                        }
+                    } catch (_: Exception) {
+                    }
+                }
+            }
+            HealthView(list, liveCopy)
+        }
+    }
+
     /** Son 3 günün kayıtları + bellekteki canlı adımlar. */
     fun view(): HealthView {
         if (dir != null) trim()

@@ -161,6 +161,8 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         trendBlock(trends, R.drawable.ic_heart, R.color.heart, "Nabız", heartAvg, heartTrend, 20)
         ui.add(body, trends, topDp = 10)
 
+        ui.add(body, ui.secondary("Verileri dışa aktar") { askExport() }, topDp = 10)
+
         val sync = ui.card(padDp = 16, padVDp = 10)
         val r = ui.horizontal()
         ui.add(r, syncText, width = 0, weight = 1f)
@@ -223,6 +225,21 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         item.addView(ui.dot(colorId), lp)
         ui.add(item, label, width = 0, weight = 1f)
         ui.add(row, item, width = 0, weight = 1f, leftDp = leftDp)
+    }
+
+    /** Adım, nabız ve uyku CSV olarak tek bir zip'e; önce aralık sorulur. */
+    private fun askExport() {
+        val ranges = HealthExport.RANGES
+        val dialog = AlertDialog.Builder(act)
+            .setTitle("Verileri dışa aktar")
+            .setItems(ranges.map { it.first }.toTypedArray()) { d, which ->
+                d.dismiss()
+                HealthExport.start(act, ranges[which].second)
+            }
+            .setNegativeButton("Vazgeç", null)
+            .create()
+        act.track(dialog)
+        dialog.show()
     }
 
     private fun requestData() {

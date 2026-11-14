@@ -411,6 +411,10 @@ class MainActivity : Activity(), WatchHub.Observer {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == HealthExport.REQ) {
+            HealthExport.onResult(this, resultCode, data)
+            return
+        }
         if (requestCode != REQ_FACE || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         // .tbwf tasarım dosyası açılınca 8 MB'a kadar çıkabilir; zip de bu sınıra kadar okunur.
