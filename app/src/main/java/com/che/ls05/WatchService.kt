@@ -143,6 +143,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         main.removeCallbacks(reconnectRunnable)
         main.removeCallbacks(callSafetyStop)
         main.removeCallbacks(musicStateRunnable)
+        main.removeCallbacks(weatherTick)
         PhoneFinder.stop("servis kapandı")
         main.removeCallbacksAndMessages(delayedToken)
         try { unregisterReceiver(btReceiver) } catch (_: Exception) {}
@@ -370,6 +371,7 @@ class WatchService : Service(), Ls05Ble.Listener {
             action != RemoteAction.FIND_PHONE_TOGGLE
         ) {
             main.removeCallbacks(musicStateRunnable)
+        main.removeCallbacks(weatherTick)
             main.postDelayed(musicStateRunnable, MUSIC_STATE_DELAY_MS)
         }
     }
@@ -515,6 +517,16 @@ class WatchService : Service(), Ls05Ble.Listener {
         sendMusicState()
         pushSettings()
         if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(true)
+        WeatherSync.refresh(this, force = false)
+        scheduleWeather()
+    }
+
+    private val weatherTick = Runnable { WeatherSync.refresh(this, force = false); scheduleWeather() }
+
+    /** Servis açık kaldıkça saatte bir hava durumu yenilenir. */
+    private fun scheduleWeather() {
+        main.removeCallbacks(weatherTick)
+        if (Prefs.weatherEnabled(this)) main.postDelayed(weatherTick, WeatherSync.REFRESH_MS)
     }
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {

@@ -1243,6 +1243,20 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
     private val theme: Segmented = ui.segmented(listOf("Sistem", "Koyu", "Açık"), Prefs.themeMode(act)) { act.setThemeMode(it) }
     private val idRow: NavRow = ui.navRow(null, "Kimlik", null, "") { editId() }
     private val deviceBox: LinearLayout = ui.vertical()
+    // Hava durumu
+    private val weatherSwitch: SwitchRow = ui.switchRow(
+        "Hava durumunu saate gönder",
+        "Open-Meteo'dan saatte bir alınır. Yalnızca açıkken internete çıkılır.",
+        Prefs.weatherEnabled(act),
+        iconRes = R.drawable.ic_weather,
+    ) { on ->
+        Prefs.setWeatherEnabled(act, on)
+        if (on && Prefs.weatherLat(act) == null) pickCity() else if (on) WeatherSync.refresh(act, force = true)
+        refreshWatchInfo()
+    }
+    private val cityRow: NavRow = ui.navRow(null, "Şehir", null, "") { pickCity() }
+    private val weatherInfo: TextView = ui.caption("")
+
     private val autoTime: SwitchRow = ui.switchRow(
         "Bağlanınca saati eşitle",
         "Saat her bağlantıda telefonun saatine ayarlanır.",
@@ -1287,6 +1301,27 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, ui.row("Firmware", trailing = firmwareValue))
         ui.add(body, w, topDp = 8)
+
+        // Hava durumu
+        val wx = ui.card(padDp = 16, padVDp = 6)
+        ui.add(wx, weatherSwitch.view)
+        ui.add(wx, ui.divider(), height = ui.dp(1))
+        ui.add(wx, cityRow.view)
+        val wxBottom = ui.horizontal()
+        ui.add(wxBottom, weatherInfo, width = 0, weight = 1f)
+        ui.add(wxBottom, ui.tonal("Güncelle") {
+            if (!Prefs.weatherEnabled(act) || Prefs.weatherLat(act) == null) {
+                act.toast("Önce hava durumunu aç ve şehir seç.")
+            } else {
+                weatherInfo.text = "Alınıyor…"
+                WeatherSync.refresh(act, force = true) { err ->
+                    if (err != null) act.toast(err)
+                    refreshWatchInfo()
+                }
+            }
+        }, width = Ui.WRAP, leftDp = 8)
+        ui.add(wx, wxBottom, topDp = 4)
+        ui.add(body, wx, topDp = 10)
 
         // Profil
         val profile = ui.card(padDp = 16, padVDp = 4)
@@ -1397,7 +1432,60 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         }
     }
 
+    /** Şehir arama penceresi. */
+    private fun pickCity() {
+        val box = ui.vertical()
+        box.setPadding(ui.dp(20), ui.dp(12), ui.dp(20), 0)
+        val field = ui.field("Şehir adı, ör. İstanbul")
+        field.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        ui.add(box, field)
+        val list = ui.vertical()
+        val status = ui.caption("")
+        ui.add(box, status, topDp = 8)
+        ui.add(box, list, topDp = 4)
+        val dialog = AlertDialog.Builder(act)
+            .setTitle("Şehir seç")
+            .setView(box)
+            .setPositiveButton("Ara", null)
+            .setNegativeButton("Vazgeç", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val q = field.text.toString().trim()
+                if (q.length < 2) { status.text = "En az 2 harf yaz."; return@setOnClickListener }
+                status.text = "Aranıyor…"
+                list.removeAllViews()
+                WeatherSync.search(q) { cities, err ->
+                    when {
+                        err != null -> status.text = err
+                        cities.isNullOrEmpty() -> status.text = "Sonuç bulunamadı."
+                        else -> {
+                            status.text = "Birini seç:"
+                            for (city in cities) {
+                                val r = ui.navRow(null, city.name, city.detail.ifEmpty { null }, null) {
+                                    Prefs.setWeatherCity(act, city.name, city.lat, city.lon)
+                                    Prefs.setWeatherEnabled(act, true)
+                                    dialog.dismiss()
+                                    refreshWatchInfo()
+                                    WeatherSync.refresh(act, force = true) { e ->
+                                        if (e != null) act.toast(e)
+                                        refreshWatchInfo()
+                                    }
+                                }
+                                ui.add(list, r.view)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
     fun refreshWatchInfo() {
+        weatherSwitch.toggle.set(Prefs.weatherEnabled(act))
+        cityRow.value.text = Prefs.weatherCityName(act).ifEmpty { "Seçilmedi" }
+        weatherInfo.text = WeatherSync.summary(act)
         idRow.value.text = if (hasId()) "Kayıtlı" else "Girilmedi"
         autoTime.toggle.set(Prefs.autoTime(act))
         remote.toggle.set(Prefs.remoteControl(act))

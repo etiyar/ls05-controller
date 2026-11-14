@@ -267,3 +267,47 @@ object UteProfile {
         )
     }
 }
+
+/**
+ * Open-Meteo (WMO) hava kodu → saat kodu (1-12). Saatin hava simgesi kareleri bu sırayı izliyor
+ * (Casio örneği: 1 güneş, 2 parçalı, 3 kapalı, 4 sağanak, 5 gök gürültüsü, 6 karla karışık, 7 çisenti,
+ * 8 şiddetli yağmur, 9 kar, 10 toz, 11 pus/sis, 12 fırtına).
+ */
+object WeatherCodes {
+    fun fromWmo(wmo: Int, windKmh: Double = 0.0): Int {
+        if (windKmh >= 62.0 && wmo !in 95..99) return UteWeather.STORM
+        return when (wmo) {
+            0 -> UteWeather.SUNNY
+            1, 2 -> UteWeather.PARTLY_CLOUDY
+            3 -> UteWeather.CLOUDY
+            45, 48 -> UteWeather.HAZE
+            51, 53, 55 -> UteWeather.DRIZZLE
+            56, 57, 66, 67 -> UteWeather.SLEET
+            61, 63, 80, 81 -> UteWeather.SHOWERS
+            65, 82 -> UteWeather.HEAVY_RAIN
+            71, 73, 75, 77, 85, 86 -> UteWeather.SNOW
+            95, 96, 99 -> UteWeather.THUNDER
+            else -> UteWeather.CLOUDY
+        }
+    }
+
+    /** Ekranda gösterilecek Türkçe ad. */
+    fun label(code: Int): String = when (code) {
+        UteWeather.SUNNY -> "Güneşli"
+        UteWeather.PARTLY_CLOUDY -> "Parçalı bulutlu"
+        UteWeather.CLOUDY -> "Kapalı"
+        UteWeather.SHOWERS -> "Sağanak"
+        UteWeather.THUNDER -> "Gök gürültülü"
+        UteWeather.SLEET -> "Karla karışık"
+        UteWeather.DRIZZLE -> "Çisenti"
+        UteWeather.HEAVY_RAIN -> "Şiddetli yağmur"
+        UteWeather.SNOW -> "Kar"
+        UteWeather.DUST -> "Toz"
+        UteWeather.HAZE -> "Sisli"
+        UteWeather.STORM -> "Fırtınalı"
+        else -> "Bilinmiyor"
+    }
+
+    /** Saate giden kısa şehir adı (saat en çok 4 karakter gösteriyor). */
+    fun shortCity(name: String): String = name.trim().take(4)
+}

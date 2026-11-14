@@ -117,8 +117,9 @@ def fw(dr, cx, cy, size, f_color, w_color):
 
 def info_boxes(dr, color=DIM, icon=MINT):
     pill(dr, 121, 81, 54, 19, color)       # tarih: gün adı (98,75) + rakamlar (127,75)
-    steps_icon(dr, 121, 146, icon)
-    pill(dr, 121, 168, 54, 19, color)      # adım rakamları (104,163)
+    # Adım: simge kutunun içinde solda; rakamlar 104'ten sola yaslı başlar, kısa sayı da düzgün durur.
+    pill(dr, 118, 168, 64, 19, color)
+    steps_icon(dr, 95, 167, icon)
 
 
 def design_minimal():
@@ -199,9 +200,26 @@ def preview(d, els, bg, second):
     return im
 
 
-def build(base: bytes, bg: Image.Image, mint_second=True):
+DAYS_TR = ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"]
+
+
+def weekday_sprites(e, color=WHITE):
+    """Gün adı kareleri (Pazar ilk), saatin hücresine ortalı. Siyah zemin saydam sayılır."""
+    out = bytearray()
+    f = ImageFont.truetype(FONT + "Inter-SemiBold.otf", 10)
+    for name in DAYS_TR:
+        im = Image.new("RGB", (e["w"], e["h"]), (0, 0, 0))
+        ImageDraw.Draw(im).text((e["w"] / 2, e["h"] / 2), name, font=f, fill=color, anchor="mm")
+        out += rgb565_be(im)
+    return bytes(out)
+
+
+def build(base: bytes, bg: Image.Image, mint_second=True, turkish_days=True):
     d = bytearray(base)
     els = elements(d)
+    if turkish_days and 15 in els and els[15]["n"] == 7:
+        e = els[15]
+        d[e["off"]:e["off"] + e["w"] * e["h"] * 2 * 7] = weekday_sprites(e)
     sec = from565(d, els[3]["off"], S, S)
     if mint_second:
         sec = recolor_second(sec)

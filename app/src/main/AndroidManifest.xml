@@ -23,6 +23,8 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- "Telefonu bul" titreşimi (normal izin, kullanıcıya sorulmaz) -->
+    <!-- Yalnızca hava durumu açıksa kullanılır (Open-Meteo). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Alarm notu: Android 12-12L tam zamanlı alarm izni, 13+ alarm uygulaması izni. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />

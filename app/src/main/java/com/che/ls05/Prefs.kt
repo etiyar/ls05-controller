@@ -87,6 +87,20 @@ object Prefs {
     fun reminderSentDay(c: Context, slot: Int): String = p(c).getString("reminderDay$slot", "") ?: ""
     fun setReminderSentDay(c: Context, slot: Int, day: String) = p(c).edit().putString("reminderDay$slot", day).apply()
 
+    // Hava durumu: şehir yalnızca telefonda; loga yazılmaz.
+    fun weatherEnabled(c: Context): Boolean = p(c).getBoolean("weatherOn", false)
+    fun setWeatherEnabled(c: Context, on: Boolean) = p(c).edit().putBoolean("weatherOn", on).apply()
+    fun weatherCityName(c: Context): String = p(c).getString("weatherCity", "") ?: ""
+    fun weatherLat(c: Context): Double? = p(c).getString("weatherLat", null)?.toDoubleOrNull()
+    fun weatherLon(c: Context): Double? = p(c).getString("weatherLon", null)?.toDoubleOrNull()
+    fun setWeatherCity(c: Context, name: String, lat: Double, lon: Double) = p(c).edit()
+        .putString("weatherCity", name).putString("weatherLat", lat.toString()).putString("weatherLon", lon.toString())
+        .remove("weatherCache").putLong("weatherAt", 0L).apply()
+    fun weatherCache(c: Context): String? = p(c).getString("weatherCache", null)
+    fun weatherFetchedAt(c: Context): Long = p(c).getLong("weatherAt", 0L)
+    fun setWeatherCache(c: Context, json: String, at: Long) = p(c).edit().putString("weatherCache", json).putLong("weatherAt", at).apply()
+    fun setWeatherSentAt(c: Context, at: Long) = p(c).edit().putLong("weatherSentAt", at).apply()
+
     /** Saate en son başarıyla yüklenen kadranın kimliği (Kadranlarım). */
     fun currentFace(c: Context): String = p(c).getString("currentFace", "") ?: ""
     fun setCurrentFace(c: Context, id: String) = p(c).edit().putString("currentFace", id).apply()
