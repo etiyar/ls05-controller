@@ -183,8 +183,37 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         ui.add(card, chart, topDp = 8, height = ui.dp(72))
     }
 
+    // Bellekte yalnızca son 3 gün var; daha eski günler arka planda dosyalardan okunur ve günde bir yenilenir.
+    private var olderView: HealthView? = null
+    private var olderHeartByDay: Map<java.time.LocalDate, List<com.che.ls05.protocol.HeartPoint>>? = null
+    private var olderDate: java.time.LocalDate? = null
+    private var olderLoading = false
+
+    private fun loadOlder(today: java.time.LocalDate) {
+        if (olderLoading || (olderDate == today && olderView != null)) return
+        olderLoading = true
+        val read = HealthStore.reader(act, 31)
+        Thread({
+            val v = try { read() } catch (e: Exception) { null }
+            val hb = v?.heartPoints()?.filter { it.bpm in HealthLog.VALID_BPM }?.groupBy { it.at.toLocalDate() }
+            act.runOnUiThread {
+                olderLoading = false
+                if (v != null) {
+                    olderView = v
+                    olderHeartByDay = hb
+                    olderDate = today
+                    refresh()
+                }
+            }
+        }, "trend-read").start()
+    }
+
     /** Günlük geçmiş grafikleri. Son sütun bugün (uykuda bu sabah biten gece). Ortalamalar yalnızca verisi olan günlerden. */
-    private fun refreshTrends(view: HealthView, today: java.time.LocalDate) {
+    private fun refreshTrends(recent: HealthView, today: java.time.LocalDate) {
+        loadOlder(today)
+        val older = olderView
+        // Son 3 gün bellekteki güncel veriden, öncesi dosyalardan.
+        fun src(d: java.time.LocalDate): HealthView = if (older != null && d.isBefore(today.minusDays(2))) older else recent
         val days = (span - 1 downTo 0).map { today.minusDays(it.toLong()) }
         val names = arrayOf("Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz")
         val labels = Array<String?>(span) { i ->
@@ -197,17 +226,19 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         }
         fun ute(d: java.time.LocalDate) = UteDate(d.year, d.monthValue, d.dayOfMonth)
 
-        val steps = IntArray(span) { view.stepsForDay(ute(days[it])) ?: 0 }
+        val steps = IntArray(span) { src(days[it]).stepsForDay(ute(days[it])) ?: 0 }
         stepTrend.setDaily(steps, span - 1, labels)
         val stepDays = steps.filter { it > 0 }
         stepAvg.text = if (stepDays.isEmpty()) "Veri yok" else "Ort. ${Fmt.num(stepDays.average().toInt())}"
 
-        val sleep = IntArray(span) { view.sleepFor(ute(days[it]))?.sleepMin ?: 0 }
+        val sleep = IntArray(span) { src(days[it]).sleepFor(ute(days[it]))?.sleepMin ?: 0 }
         sleepTrend.setDaily(sleep, span - 1, labels)
         val sleepDays = sleep.filter { it > 0 }
         sleepAvg.text = if (sleepDays.isEmpty()) "Veri yok" else "Ort. ${dur(sleepDays.average().toInt())}"
 
-        val byDay = view.heartPoints().filter { it.bpm in HealthLog.VALID_BPM }.groupBy { it.at.toLocalDate() }
+        val recentHeart = recent.heartPoints().filter { it.bpm in HealthLog.VALID_BPM }.groupBy { it.at.toLocalDate() }
+        val olderHeart = olderHeartByDay
+        val byDay = days.associateWith { d -> (if (olderHeart != null && d.isBefore(today.minusDays(2))) olderHeart[d] else recentHeart[d]) }
         val heart = IntArray(span) { i -> byDay[days[i]]?.map { it.bpm }?.average()?.toInt() ?: 0 }
         heartTrend.setDaily(heart, span - 1, labels)
         val heartDays = heart.filter { it > 0 }
