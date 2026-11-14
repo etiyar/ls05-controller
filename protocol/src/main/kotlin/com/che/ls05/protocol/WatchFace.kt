@@ -6,8 +6,8 @@ import java.util.zip.CRC32
  * Kadran dosyası ve aktarımı (Haylou Fun SendPlateTask ve 12 Kasım kaydıyla birebir).
  *
  * Dosya: 24 bayt başlık + öğe tablosu + RGB565 (büyük uçlu) resimler.
- *   [0..1]  kimlik (u16 LE)
- *   [4..7]  veri boyu (u32 LE) = dosya boyu - 24
+ *   [0..7]  Haylou galerisi: [kimlik u16 LE][00 00][veri boyu u32 LE = dosya boyu - 24]
+ *           Hello Haylou derlemesi: "HSWTv1.0" / "HSWTv1.1" ASCII imza (boy alanı yok)
  *   [8..11] CRC32 (u32 LE), 24. bayttan dosya sonuna
  *   [12..13] en, [14..15] boy (u16 LE)
  *   0x18'den: 24 baytlık öğeler, tür 0 ile biter:
@@ -37,8 +37,56 @@ class FaceFile private constructor(
             ?: elements.firstOrNull { it.type == 17 && it.width == width && it.height == height }
             ?: elements.firstOrNull { it.width == width && it.height == height }
 
-    /** Öğenin ilk karesini ARGB piksel dizisine çevirir (RGB565, büyük uçlu). */
-    fun pixels(e: FaceElement): IntArray = Rgb565.toArgb(bytes, e.offset.toInt(), e.width, e.height)
+    /** Öğenin bir karesini ARGB piksel dizisine çevirir (RGB565, büyük uçlu). */
+    fun pixels(e: FaceElement, frame: Int = 0): IntArray =
+        Rgb565.toArgb(bytes, (e.offset + frame.toLong() * e.width * e.height * 2).toInt(), e.width, e.height)
+
+    /**
+     * Önizleme pikselleri. Dosyada önizleme (10) varsa o; yoksa arka plan üzerine öğelerin örnek kareleri
+     * ve ibreler 10:08:36 konumunda çizilir. Siyah piksel saydam sayılır (saat de böyle çiziyor olmalı).
+     */
+    fun previewPixels(): IntArray? {
+        elements.firstOrNull { it.type == 10 && it.width == width && it.height == height }?.let { return pixels(it) }
+        val bg = elements.firstOrNull { it.type == 17 && it.width == width && it.height == height }
+        val out = bg?.let { pixels(it) } ?: IntArray(width * height) { 0xFF000000.toInt() }
+        var sample = 0
+        for (e in elements) {
+            if (e === bg || e.type == 10) continue
+            if (e.width == width && e.height == height) {
+                val angle = when (e.type) { 1 -> 304.0; 2 -> 48.0; 3 -> 216.0; else -> continue }
+                rotateOnto(out, pixels(e), angle)
+                continue
+            }
+            val frame = if (e.frames >= 13) 3 + (sample++ * 3 + 1) % 10 else 0
+            val px = pixels(e, minOf(frame, maxOf(e.frames, 1) - 1))
+            for (yy in 0 until e.height) for (xx in 0 until e.width) {
+                val v = px[yy * e.width + xx]
+                if (v and 0xFFFFFF == 0) continue
+                val tx = e.x + xx
+                val ty = e.y + yy
+                if (tx in 0 until width && ty in 0 until height) out[ty * width + tx] = v
+            }
+        }
+        return out
+    }
+
+    /** Tam ekran ibre resmini merkez etrafında döndürüp siyah olmayan pikselleri çizer (en yakın komşu). */
+    private fun rotateOnto(out: IntArray, src: IntArray, degrees: Double) {
+        val a = Math.toRadians(degrees)
+        val cos = Math.cos(a)
+        val sin = Math.sin(a)
+        val cx = width / 2.0
+        val cy = height / 2.0
+        for (y in 0 until height) for (x in 0 until width) {
+            val dx = x - cx
+            val dy = y - cy
+            val sx = (cx + dx * cos + dy * sin).toInt()
+            val sy = (cy - dx * sin + dy * cos).toInt()
+            if (sx !in 0 until width || sy !in 0 until height) continue
+            val v = src[sy * width + sx]
+            if (v and 0xFFFFFF != 0) out[y * width + x] = v
+        }
+    }
 
     companion object {
         const val HEADER = 24
@@ -59,9 +107,13 @@ class FaceFile private constructor(
         /** Dosyayı doğrular. Geçersizse nedenini Türkçe döndürür (Result.failure). */
         fun parse(b: ByteArray, screenW: Int = 240, screenH: Int = 240): Result<FaceFile> {
             fun fail(msg: String) = Result.failure<FaceFile>(IllegalArgumentException(msg))
+            if (b.size >= 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte()) {
+                return fail("Bu bir .tbwf (Hello Haylou tasarım) dosyası. Henüz desteklenmiyor; .bin kadranlar yüklenebilir.")
+            }
             if (b.size < HEADER + ENTRY) return fail("Dosya çok küçük; kadran dosyası değil.")
             if (b.size > MAX_SIZE) return fail("Dosya 2 MB'tan büyük.")
-            if (u32(b, 4) != (b.size - HEADER).toLong()) return fail("Boy alanı tutmuyor; dosya eksik ya da farklı biçimde.")
+            val hsw = b[0] == 'H'.code.toByte() && b[1] == 'S'.code.toByte() && b[2] == 'W'.code.toByte()
+            if (!hsw && u32(b, 4) != (b.size - HEADER).toLong()) return fail("Boy alanı tutmuyor; dosya eksik ya da farklı biçimde.")
             if (u32(b, 8) != crc(b)) return fail("Doğrulama toplamı (CRC) tutmuyor; dosya bozuk.")
             val w = u16(b, 12)
             val h = u16(b, 14)
@@ -85,7 +137,7 @@ class FaceFile private constructor(
                 if (els.size > 64) return fail("Öğe tablosu çok uzun.")
             }
             if (els.isEmpty()) return fail("Kadranda öğe yok.")
-            return Result.success(FaceFile(b, u16(b, 0), w, h, els))
+            return Result.success(FaceFile(b, if (hsw) 0 else u16(b, 0), w, h, els))
         }
     }
 }

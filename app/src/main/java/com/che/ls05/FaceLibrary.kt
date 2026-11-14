@@ -55,7 +55,7 @@ object FaceLibrary {
     /** Dosyadaki önizleme resmi (240x240). Bir kez çözülür, sonra bellekten. */
     fun preview(e: Entry): Bitmap? = previews.getOrPut(e.id) {
         val f = load(e) ?: return@getOrPut null
-        val el = f.previewElement() ?: return@getOrPut null
-        Bitmap.createBitmap(f.pixels(el), el.width, el.height, Bitmap.Config.ARGB_8888)
+        val px = f.previewPixels() ?: return@getOrPut null
+        Bitmap.createBitmap(px, f.width, f.height, Bitmap.Config.ARGB_8888)
     }
 }

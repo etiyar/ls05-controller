@@ -119,4 +119,13 @@ class WatchFaceTest {
         val f = FaceFile.parse(synthetic()).getOrThrow()
         assertEquals(17, f.previewElement()?.type)
     }
+
+    @Test
+    fun hswSignatureSkipsSizeField() {
+        val b = synthetic()
+        "HSWTv1.0".toByteArray().copyInto(b, 0)
+        le32(b, 8, FaceFile.crc(b))
+        assertTrue(FaceFile.parse(b).isSuccess)
+        assertEquals(240 * 240, FaceFile.parse(b).getOrThrow().previewPixels()!!.size)
+    }
 }
