@@ -142,6 +142,32 @@ object TextSanitizer {
     }
 }
 
+/**
+ * İsteğe bağlı Türkçe harf sadeleştirme (Bildirimler > "Türkçe harfleri sadeleştir").
+ *
+ * Saatte Türkçe harfler genelde doğru çiziliyor (PLAN.md, "Türkçe harfler saatte doğru çiziliyor").
+ * Tek sorun noktasız "ı": saatin yazı tipinde boşluklu görünüyor (PLAN.md, 80 karakter testi notu).
+ * Bu yüzden varsayılan küme yalnızca ı/İ. ğ ve ş için kanıtlı bir sorun yok; gerekirse EXTENDED
+ * kümesi koddan seçilir. ç, ö, ü saatte düzgün göründüğü için hiçbir kümede yok.
+ */
+object TurkishFold {
+    /** Varsayılan: yalnızca noktasız ı ve noktalı İ. */
+    val DOTLESS_I: Map<Char, Char> = mapOf('ı' to 'i', 'İ' to 'I')
+
+    /** Genişletilmiş küme: ğ ve ş de sadeleşir. Şu an kullanılmıyor; saatte sorun görülürse DEFAULT yapılır. */
+    val EXTENDED: Map<Char, Char> = DOTLESS_I + mapOf('ğ' to 'g', 'Ğ' to 'G', 'ş' to 's', 'Ş' to 'S')
+
+    /** Uygulamanın kullandığı küme. */
+    val DEFAULT: Map<Char, Char> = DOTLESS_I
+
+    fun apply(text: String, map: Map<Char, Char> = DEFAULT): String {
+        if (text.none { it in map }) return text
+        val sb = StringBuilder(text.length)
+        for (ch in text) sb.append(map[ch] ?: ch)
+        return sb.toString()
+    }
+}
+
 /** Uygulama türü baytı (Hello Haylou tablosu). Saatte simge karşılıkları henüz test edilmedi. */
 object UteAppType {
     const val QQ = 1
@@ -366,6 +392,15 @@ sealed class UteFrame {
     /** 0D 04: arama durdurma alındı (kayıtta saat aynen yankıladı). */
     object CallStopAck : UteFrame()
 
+    /**
+     * A2 [değer]: saatin kendiliğinden yolladığı iki baytlık durum sinyali. Ne Haylou Fun (rd/b yönlendirme
+     * tablosu) ne Hello Haylou (a3) bu baytı işliyor; anlamı kaynakta yok.
+     * Tahmin (güven orta): pil yüzdesi. 10 Kasım kaydında pil 66 iken A2 42 (=66) geldi; 12 Kasım kaydında
+     * pil 66 okunduktan sonra 2 dk'lık kadran yüklemesinin ardından A2 3F (=63). Dakikada bir artan
+     * A2 28, 29, 2A … şarjdaki saatle uyumlu. Doğrulanmadığı için pil göstergesine yazılmaz, yalnızca loglanır.
+     */
+    data class StatusSignal(val value: Int) : UteFrame()
+
     /** Tanınan ama anlamı önemsiz yanıtlar (ör. 18 01, 1d 02, 25 …, 01 …). */
     data class Echo(val bytes: ByteArray) : UteFrame()
     data class Unknown(val bytes: ByteArray) : UteFrame()
@@ -444,6 +479,8 @@ object UteParser {
             0x0D.toByte() -> if (data.size == 2 && data[1] == 0x04.toByte()) UteFrame.CallStopAck else UteFrame.Unknown(data)
 
             UteCommand.TIME -> UteFrame.TimeAck(data)
+
+            0xA2.toByte() -> if (data.size == 2) UteFrame.StatusSignal(data[1].toInt() and 0xFF) else UteFrame.Unknown(data)
 
             0x20.toByte() ->
                 if (data.size >= 3 && data[1] == 0x04.toByte()) UteFrame.AuthStatus(data[2].toInt() and 0xFF)

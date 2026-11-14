@@ -29,7 +29,7 @@ Durum özeti: Kendi Android uygulamamız Haylou uygulaması olmadan saate bağla
 | Handle eşlemesi (`0x22`=6001, `0x24`=6002, `0x10`=33F1, `0x1C`=34F1) | GATT sırasından hesaplandı; 8 handle'ın hepsi kayıtla tutarlı ama doğrudan okunmadı |
 | `04` saat/tarih biçimi (`04 07EA 0B 0B 13 33 2B 03`) | Kayıtta görüldü, bizim uygulamadan gönderilmedi |
 | `18 03 <tarih-saat> …`: zaman damgalı kayıt, muhtemelen nabız | Yalnızca 2 örnek (00:50, 01:10); değer alanı çözülmedi |
-| `A2 42`: pil bildirimi | Tek örnek, değer pil ile aynı |
+| `A2 xx`: olası pil bildirimi ("Saat durum sinyali" olarak ayrıştırılır, 10 dakikada bir loglanır) | `A2 42` pil 66 iken; `A2 3F` kadran yüklemesinden sonra; dakikada bir artan `A2 28, 29 …` şarjla uyumlu. Haylou Fun ve Hello Haylou bu baytı işlemiyor; doğrulanmadı |
 | Uygulama tipi baytları (WhatsApp 7, Telegram 24 …) | Hello Haylou tablosundan; saatte simgeleri denenmedi |
 
 ### 1.3 Bilinmeyenler

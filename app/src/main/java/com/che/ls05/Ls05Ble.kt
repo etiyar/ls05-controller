@@ -441,6 +441,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
     }
 
     private var lastLiveLog = 0L
+    private var lastSignalLog = 0L
 
     private fun handleNotify(ch: BluetoothGattCharacteristic, value: ByteArray) {
         listener.onRawFrame(value)
@@ -451,6 +452,17 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             if (now - lastLiveLog >= 60_000) {
                 lastLiveLog = now
                 log("<- canlı adım: bu saat ${frame.hour.total} (dakikada bir loglanır)")
+            }
+            listener.onFrame(frame)
+            return
+        }
+        // A2 xx dakikada bir gelir (anlamı kaynakta yok, olası pil yüzdesi). Saate hiçbir şey gönderilmez;
+        // log en çok 10 dakikada bir yazılır.
+        if (frame is UteFrame.StatusSignal) {
+            val now = System.currentTimeMillis()
+            if (now - lastSignalLog >= 10 * 60_000L) {
+                lastSignalLog = now
+                log("<- Saat durum sinyali (A2 %02X), olası pil %%${frame.value} (doğrulanmadı; 10 dakikada bir loglanır)".format(frame.value))
             }
             listener.onFrame(frame)
             return
@@ -487,6 +499,7 @@ class Ls05Ble(private val context: Context, private val listener: Listener) {
             is UteFrame.ProfileAck -> log("   = Profil paketi saat tarafından alındı")
             is UteFrame.CallStopAck -> log("   = Arama durdurma saat tarafından alındı")
             is UteFrame.Echo -> Unit
+            is UteFrame.StatusSignal -> Unit
             is UteFrame.Unknown -> log("   = Bilinmeyen çerçeve, yorumlanmadı")
         }
         listener.onFrame(frame)

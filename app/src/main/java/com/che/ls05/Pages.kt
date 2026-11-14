@@ -16,6 +16,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import com.che.ls05.protocol.AlarmReminder
@@ -85,6 +86,8 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
     private val awakeText: TextView = ui.caption("")
 
     private val syncText: TextView = ui.caption("")
+    private val refreshButton: Button = ui.secondary("Verileri yenile") { requestData() }
+    private val refreshSpinner = ProgressBar(act, null, android.R.attr.progressBarStyleSmall)
 
     // Geçmiş: 7 veya 30 günlük adım, uyku ve nabız.
     private var span = 7
@@ -161,7 +164,11 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         val sync = ui.card(padDp = 16, padVDp = 10)
         val r = ui.horizontal()
         ui.add(r, syncText, width = 0, weight = 1f)
-        ui.add(r, ui.secondary("Verileri yenile") { requestData() }, width = Ui.WRAP, leftDp = 12)
+        refreshSpinner.isIndeterminate = true
+        refreshSpinner.indeterminateTintList = android.content.res.ColorStateList.valueOf(ui.color(R.color.text2))
+        refreshSpinner.visibility = View.GONE
+        r.addView(refreshSpinner, LinearLayout.LayoutParams(ui.dp(20), ui.dp(20)).also { it.leftMargin = ui.dp(12) })
+        ui.add(r, refreshButton, width = Ui.WRAP, leftDp = 12)
         ui.add(sync, r)
         ui.add(body, sync, topDp = 10)
     }
@@ -220,8 +227,18 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
 
     private fun requestData() {
         val s = act.readyService() ?: return
-        s.requestHistory(true)
-        act.toast("Saatten veriler isteniyor.")
+        if (s.requestHistory(true)) act.toast("Saatten veriler isteniyor.")
+        else if (s.historyBusy) act.toast("Veriler zaten okunuyor.")
+        else act.toast("Veriler az önce okundu.")
+        refreshButtonState()
+    }
+
+    /** Okuma sürerken düğme kapalı ve yanında dönen gösterge. */
+    private fun refreshButtonState() {
+        val busy = WatchHub.service?.historyBusy == true
+        refreshButton.text = if (busy) "Okunuyor…" else "Verileri yenile"
+        ui.enable(refreshButton, !busy)
+        refreshSpinner.visibility = if (busy) View.VISIBLE else View.GONE
     }
 
     override fun refresh() {
@@ -322,6 +339,7 @@ class TodayPage(act: MainActivity) : Page(act, "Bugün") {
         refreshTrends(view, now.toLocalDate())
 
         syncText.text = if (last == 0L) "Son eşitleme: henüz yok" else "Son eşitleme: ${Fmt.dayMs(last)}"
+        refreshButtonState()
     }
 }
 
@@ -998,6 +1016,11 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
     private val vibrate: SwitchRow = ui.switchRow(
         "Bildirimden sonra titret", null, Prefs.vibrate(act), iconRes = R.drawable.ic_vibrate,
     ) { Prefs.setVibrate(act, it) }
+    private val foldTurkish: SwitchRow = ui.switchRow(
+        "Türkçe harfleri sadeleştir",
+        "Saatte boşluklu görünen ı yerine i yazılır (İ yerine I).",
+        Prefs.foldTurkish(act),
+    ) { Prefs.setFoldTurkish(act, it) }
     private val rejectCalls: SwitchRow = ui.switchRow(
         "Saatten aramayı reddet",
         "Saatteki kırmızı düğme aramayı kapatır.",
@@ -1034,6 +1057,8 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         ui.add(main, missedCalls.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, vibrate.view)
+        ui.add(main, ui.divider(), height = ui.dp(1))
+        ui.add(main, foldTurkish.view)
         ui.add(main, ui.divider(), height = ui.dp(1))
         ui.add(main, rejectCalls.view)
         ui.add(body, main, topDp = 10)
@@ -1081,6 +1106,7 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
         incomingCalls.toggle.set(Prefs.incomingCalls(act))
         missedCalls.toggle.set(Prefs.missedCalls(act))
         rejectCalls.toggle.set(Prefs.rejectFromWatch(act))
+        foldTurkish.toggle.set(Prefs.foldTurkish(act))
         onReady(WatchHub.ready)
         refreshApps()
     }
@@ -1267,6 +1293,23 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         "Saatin müzik, ses ve telefonu bul düğmeleri telefonda uygulanır.",
         Prefs.remoteControl(act),
     ) { Prefs.setRemoteControl(act, it) }
+    private val lostAlert: SwitchRow = ui.switchRow(
+        "Saat uzaklaşınca uyar",
+        "Bağlantı beklenmedik koparsa ve 1 dakika içinde geri gelmezse telefonda uyarı çıkar. Konum tutulmaz.",
+        Prefs.lostAlert(act),
+    ) { on ->
+        Prefs.setLostAlert(act, on)
+        if (!on) LinkAlert.disarm(act, "ayar kapatıldı")
+        if (on && android.os.Build.VERSION.SDK_INT >= 33 &&
+            act.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            act.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 2)
+        }
+        refreshWatchInfo()
+    }
+    private val lostQuiet: SwitchRow = ui.switchRow("Sessiz saatlerde uyarma", "", Prefs.lostQuiet(act)) {
+        Prefs.setLostQuiet(act, it)
+    }
     private val firmwareValue: TextView = ui.text("", 15f, R.color.text2)
     private val profileRow: NavRow = ui.navRow(R.drawable.ic_user, "Profil", "", null) { act.watch.editProfile() }
     private val actionButtons = ArrayList<Button>()
@@ -1298,6 +1341,10 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(w, autoTime.view)
         ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, remote.view)
+        ui.add(w, ui.divider(), height = ui.dp(1))
+        ui.add(w, lostAlert.view)
+        ui.add(w, ui.divider(), height = ui.dp(1))
+        ui.add(w, lostQuiet.view)
         ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, ui.row("Firmware", trailing = firmwareValue))
         ui.add(body, w, topDp = 8)
@@ -1489,6 +1536,18 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         idRow.value.text = if (hasId()) "Kayıtlı" else "Girilmedi"
         autoTime.toggle.set(Prefs.autoTime(act))
         remote.toggle.set(Prefs.remoteControl(act))
+        lostAlert.toggle.set(Prefs.lostAlert(act))
+        lostQuiet.toggle.set(Prefs.lostQuiet(act))
+        ui.enable(lostQuiet.view, Prefs.lostAlert(act))
+        lostQuiet.toggle.sw.isEnabled = Prefs.lostAlert(act)
+        // Sessiz saatler saatin rahatsız etme penceresidir; ayrı saat seçimi yok (bkz. LinkAlert).
+        val dnd = DndSetting.decode(SettingsStore.entry(act, DndSetting.KEY).desired) ?: DndSetting.DEFAULT
+        lostQuiet.subtitle.text = if (dnd.enabled) {
+            "Saatin rahatsız etme saatleri: ${Fmt.hm(dnd.startHour, dnd.startMinute)}-${Fmt.hm(dnd.endHour, dnd.endMinute)}."
+        } else {
+            "Saatin rahatsız etme saatleri kullanılır. Rahatsız etme şu an kapalı."
+        }
+        lostQuiet.subtitle.visibility = View.VISIBLE
         firmwareValue.text = WatchHub.firmware ?: "bilinmiyor"
         profileRow.subtitle.text =
             if (SettingsStore.profileDraft(act).personalComplete) "Boy, kilo, yaş ve cinsiyet girildi." else "Boy, kilo, yaş ve cinsiyet girilmedi."

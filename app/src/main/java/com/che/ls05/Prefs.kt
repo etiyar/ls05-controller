@@ -105,6 +105,26 @@ object Prefs {
     fun currentFace(c: Context): String = p(c).getString("currentFace", "") ?: ""
     fun setCurrentFace(c: Context, id: String) = p(c).edit().putString("currentFace", id).apply()
 
+    /** Bildirim metninde ı/İ sadeleştirilsin mi (varsayılan kapalı). Küme: TurkishFold.DEFAULT. */
+    fun foldTurkish(c: Context): Boolean = p(c).getBoolean("foldTurkish", false)
+    fun setFoldTurkish(c: Context, value: Boolean) = p(c).edit().putBoolean("foldTurkish", value).apply()
+
+    // "Saat uzaklaştı" uyarısı. Konum tutulmaz; yalnızca kopma zamanı ve ayarlar.
+    fun lostAlert(c: Context): Boolean = p(c).getBoolean("lostAlert", false)
+    fun setLostAlert(c: Context, value: Boolean) = p(c).edit().putBoolean("lostAlert", value).apply()
+
+    /** Saatin rahatsız etme saatlerinde uyarma (varsayılan açık; o ayar kapalıysa etkisi yok). */
+    fun lostQuiet(c: Context): Boolean = p(c).getBoolean("lostQuiet", true)
+    fun setLostQuiet(c: Context, value: Boolean) = p(c).edit().putBoolean("lostQuiet", value).apply()
+
+    /** "1 saat sustur" bitiş zamanı (ms); 0 = susturulmadı. */
+    fun lostSnoozeUntil(c: Context): Long = p(c).getLong("lostSnoozeUntil", 0L)
+    fun setLostSnoozeUntil(c: Context, at: Long) = p(c).edit().putLong("lostSnoozeUntil", at).apply()
+
+    /** Bekleyen kopmanın zamanı (ms); 0 = bekleyen yok. */
+    fun lostSince(c: Context): Long = p(c).getLong("lostSince", 0L)
+    fun setLostSince(c: Context, at: Long) = p(c).edit().putLong("lostSince", at).apply()
+
     // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
     // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.
 }

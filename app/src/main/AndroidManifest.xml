@@ -91,5 +91,10 @@
         <receiver
             android:name=".ReminderReceiver"
             android:exported="false" />
+
+        <!-- "Saat uzaklaştı" denetimi ve "1 saat sustur" eylemi -->
+        <receiver
+            android:name=".LinkAlertReceiver"
+            android:exported="false" />
     </application>
 </manifest>

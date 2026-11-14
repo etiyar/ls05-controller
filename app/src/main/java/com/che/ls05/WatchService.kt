@@ -24,10 +24,12 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import com.che.ls05.protocol.AlarmSetting
 import com.che.ls05.protocol.DndSetting
+import com.che.ls05.protocol.HistoryGate
 import com.che.ls05.protocol.ProfileSetting
 import com.che.ls05.protocol.RemoteAction
 import com.che.ls05.protocol.SettingCommands
 import com.che.ls05.protocol.SettingSync
+import com.che.ls05.protocol.TurkishFold
 import com.che.ls05.protocol.UteCommand
 import com.che.ls05.protocol.UteDate
 import com.che.ls05.protocol.UteFrame
@@ -100,6 +102,21 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     private val reconnectRunnable = Runnable { connectSaved(autoConnect = true) }
 
+    /** Bu bağlantı doğrulanıp hazır oldu mu. Hiç hazır olmamış bağlantı denemesinin kopması uyarı kurmaz. */
+    private var wasReady = false
+
+    /** Geçmiş okuma kapısı: üst üste gelen istekleri ayıklar (bkz. requestHistory). */
+    private val historyGate = HistoryGate()
+    private val historyTimeout = Runnable {
+        if (historyGate.timeout(SystemClock.uptimeMillis())) {
+            WatchHub.log("Geçmiş okuması ${HistoryGate.TIMEOUT_MS / 1000} sn içinde tamamlanmadı; bitmiş sayıldı.")
+            historyChanged()
+        }
+    }
+
+    /** Geçmiş okuması sürüyor mu ("Verileri yenile" düğmesi için). */
+    val historyBusy: Boolean get() = historyGate.running
+
     /** Saatte gelen arama ekranı açık (0D 04 henüz gönderilmedi). */
     private var callOnWatch = false
     private val callSafetyStop = Runnable { sendCallStop("arama ${CALL_MAX_MS / 1000} sn içinde bitmedi") }
@@ -111,6 +128,8 @@ class WatchService : Service(), Ls05Ble.Listener {
             when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1)) {
                 BluetoothAdapter.STATE_OFF -> {
                     WatchHub.log("Bluetooth kapandı.")
+                    // Kullanıcı Bluetooth'u kapattı: "saat uzaklaştı" uyarısı verilmez.
+                    LinkAlert.disarm(this@WatchService, "Bluetooth kapandı")
                     main.removeCallbacks(reconnectRunnable)
                     restarting = true
                     ble.forceClose("Bluetooth kapandı")
@@ -136,6 +155,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         SettingsStore.sync(applicationContext)
         WatchHub.service = this
         createChannel()
+        LinkAlert.createChannel(this)
         registerReceiver(btReceiver, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED))
     }
 
@@ -144,6 +164,9 @@ class WatchService : Service(), Ls05Ble.Listener {
         main.removeCallbacks(callSafetyStop)
         main.removeCallbacks(musicStateRunnable)
         main.removeCallbacks(weatherTick)
+        main.removeCallbacks(historyTimeout)
+        historyGate.reset()
+        LinkAlert.disarm(this, "servis kapandı")
         PhoneFinder.stop("servis kapandı")
         main.removeCallbacksAndMessages(delayedToken)
         try { unregisterReceiver(btReceiver) } catch (_: Exception) {}
@@ -166,6 +189,7 @@ class WatchService : Service(), Ls05Ble.Listener {
                 Prefs.setServiceEnabled(this, false)
                 main.removeCallbacks(reconnectRunnable)
                 WatchHub.log("Servis kullanıcı tarafından durduruluyor.")
+                LinkAlert.disarm(this, "servis durduruldu")
                 if (ble.isConnected) ble.disconnect()
                 main.postDelayed({
                     stopForeground(STOP_FOREGROUND_REMOVE)
@@ -300,16 +324,19 @@ class WatchService : Service(), Ls05Ble.Listener {
     fun forward(note: WatchHub.Note) {
         when (note.kind) {
             WatchHub.NoteKind.MESSAGE, WatchHub.NoteKind.MISSED_CALL -> {
-                val sent = ble.sendNotification(note.title, note.body, Prefs.vibrate(this), note.type)
+                val sent = ble.sendNotification(fold(note.title), fold(note.body), Prefs.vibrate(this), note.type)
                 if (sent > 0) {
                     val what = if (note.kind == WatchHub.NoteKind.MISSED_CALL) "Cevapsız arama" else note.appLabel
                     WatchHub.log("İletildi: $what (tip ${note.type}, ${note.title.length + note.body.length} karakter).")
                 }
             }
-            WatchHub.NoteKind.CALL_ALERT -> sendCallAlert(note.body)
+            WatchHub.NoteKind.CALL_ALERT -> sendCallAlert(fold(note.body))
             WatchHub.NoteKind.CALL_STOP -> sendCallStop("arama cevaplandı ya da bitti")
         }
     }
+
+    /** "Türkçe harfleri sadeleştir" açıksa ı/İ sadeleşir (saat yazı tipinde ı boşluklu görünüyor). */
+    private fun fold(text: String): String = if (Prefs.foldTurkish(this)) TurkishFold.apply(text) else text
 
     // ---------- Gelen arama ----------
 
@@ -437,16 +464,39 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     // ---------- Sağlık geçmişi ----------
 
-    /** Dünden beri adım, 1,5 sn sonra nabız, includeSleep ise 4 sn sonra uyku geçmişini ister. */
-    fun requestHistory(includeSleep: Boolean) {
+    /**
+     * Dünden beri adım, 1,5 sn sonra nabız, includeSleep ise 4 sn sonra uyku geçmişini ister.
+     * Okuma sürerken ya da bitişinden 30 sn geçmeden gelen istek yok sayılır (tek satır log).
+     * Kayıtta "Verileri yenile" ile bağlanınca otomatik okuma 6 sn arayla iki tam okuma yapmıştı.
+     * İstek gönderildiyse true.
+     */
+    fun requestHistory(includeSleep: Boolean): Boolean {
         if (face.active) {
             WatchHub.log("Kadran yükleniyor; geçmiş daha sonra okunacak.")
-            return
+            return false
         }
         if (!ble.isReady) {
             WatchHub.log("Saat hazır değil; geçmiş okunmadı.")
-            return
+            return false
         }
+        val now = SystemClock.uptimeMillis()
+        when (val c = historyGate.check(now)) {
+            HistoryGate.Check.Running -> {
+                WatchHub.log("Geçmiş okuması zaten sürüyor; yeni istek yok sayıldı.")
+                return false
+            }
+            is HistoryGate.Check.Recent -> {
+                WatchHub.log("Geçmiş ${c.secondsAgo} sn önce okundu; yeni istek yok sayıldı.")
+                return false
+            }
+            HistoryGate.Check.Start -> Unit
+        }
+        val parts = mutableSetOf(HistoryGate.Part.STEPS, HistoryGate.Part.HEART)
+        if (includeSleep) parts += HistoryGate.Part.SLEEP
+        historyGate.start(now, parts)
+        main.removeCallbacks(historyTimeout)
+        main.postDelayed(historyTimeout, HistoryGate.TIMEOUT_MS)
+        historyChanged()
         val y = LocalDate.now().minusDays(1)
         val from = UteDate(y.year, y.monthValue, y.dayOfMonth)
         val s = session
@@ -460,7 +510,19 @@ class WatchService : Service(), Ls05Ble.Listener {
                 if (session == s && ble.isReady) ble.sendCommand(UteHealth.sleepHistory(from), "uyku geçmişi (1d 01)")
             }, delayedToken, SystemClock.uptimeMillis() + 4_000)
         }
+        return true
     }
+
+    /** Okumanın bir parçası bitti. Hepsi bittiyse kapı kapanır ve ekran haber alır. */
+    private fun historyPartDone(part: HistoryGate.Part) {
+        if (historyGate.partDone(part, SystemClock.uptimeMillis())) {
+            main.removeCallbacks(historyTimeout)
+            historyChanged()
+        }
+    }
+
+    /** "Verileri yenile" düğmesinin durumu Bugün ekranında healthChanged ile yenilenir. */
+    private fun historyChanged() = WatchHub.healthChanged()
 
     private fun flushPending() {
         val notes = WatchHub.drainPending()
@@ -497,7 +559,12 @@ class WatchService : Service(), Ls05Ble.Listener {
             is UteFrame.StepHistoryEnd -> {
                 Prefs.setLastSync(this, System.currentTimeMillis())
                 WatchHub.healthChanged()
+                historyPartDone(HistoryGate.Part.STEPS)
             }
+            is UteFrame.HeartHistoryEnd -> historyPartDone(HistoryGate.Part.HEART)
+            // Uyku: bölümler gelince ya da gece kaydı yoksa (0 bölüm) okuma bitmiş sayılır.
+            is UteFrame.SleepData -> historyPartDone(HistoryGate.Part.SLEEP)
+            is UteFrame.SleepHeader -> if (frame.count == 0) historyPartDone(HistoryGate.Part.SLEEP)
             else -> Unit
         }
         WatchHub.frame(frame)
@@ -508,6 +575,8 @@ class WatchService : Service(), Ls05Ble.Listener {
         if (ready) session++
         WatchHub.setReady(ready)
         if (!ready) return
+        wasReady = true
+        LinkAlert.disarm(this, "saat yeniden bağlandı")
         reconnectAttempt = 0
         authTimeouts = 0
         if (Prefs.autoTime(this)) sendTime("otomatik saat eşitleme (04)")
@@ -531,6 +600,14 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {
         face.onDisconnected()
+        val hadLink = wasReady
+        wasReady = false
+        // Yarım kalan geçmiş okuması sayılmaz; yeniden bağlanınca hemen okunabilir.
+        if (historyGate.running) {
+            main.removeCallbacks(historyTimeout)
+            historyGate.reset()
+            historyChanged()
+        }
         val sync = SettingsStore.sync(this)
         if (sync.onDisconnect().isNotEmpty()) {
             SettingsStore.save(this)
@@ -546,6 +623,8 @@ class WatchService : Service(), Ls05Ble.Listener {
             updateStatus("Bağlı değil")
             return
         }
+        // Beklenmeyen kopma: ayar açıksa 60 sn sonra denetlenir; saat bu arada dönerse uyarı kalkar.
+        if (hadLink) LinkAlert.arm(this)
         scheduleReconnect()
     }
 
@@ -573,6 +652,8 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     private fun blockAuth(message: String) {
         authBlocked = true
+        // Saat yakında ama doğrulama durdu: "uzaklaştı" uyarısı yanlış olur.
+        LinkAlert.disarm(this, "doğrulama durdu")
         main.removeCallbacks(reconnectRunnable)
         WatchHub.log(message)
         updateStatus("Doğrulama durdu; uygulamayı aç")
