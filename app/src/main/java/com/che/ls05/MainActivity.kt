@@ -431,7 +431,7 @@ class MainActivity : Activity(), WatchHub.Observer {
             null
         }
         if (bytes == null) {
-            toast("Dosya okunamadı ya da 2 MB'tan büyük.")
+            toast("Dosya okunamadı ya da ${com.che.ls05.protocol.FaceFile.MAX_SIZE / 1024} KB sınırından büyük.")
             return
         }
         var name = "Kadran"

@@ -17,9 +17,11 @@ import java.util.zip.CRC32
  * (1b + sıra hi + sıra lo + veri), her blok sonunda saat 26 03 04 der, bitiş 1a 03 00.
  */
 
-data class FaceElement(
+class FaceElement(
     val type: Int, val width: Int, val height: Int, val offset: Long,
     val x: Int, val y: Int, val frames: Int,
+    /** Tablo girdisinin son 3 baytı (ibrelerde boyut bilgisi). */
+    val tail: ByteArray = ByteArray(3),
 )
 
 class FaceFile private constructor(
@@ -30,6 +32,8 @@ class FaceFile private constructor(
     val elements: List<FaceElement>,
 ) {
     val size: Int get() = bytes.size
+
+    fun tail(e: FaceElement): ByteArray = e.tail.copyOf()
 
     /** Önizleme için en uygun öğe: önizleme (10), yoksa arka plan (17), yoksa ilk tam ekran öğe. */
     fun previewElement(): FaceElement? =
@@ -92,7 +96,8 @@ class FaceFile private constructor(
         const val HEADER = 24
         const val TABLE = 0x18
         const val ENTRY = 24
-        const val MAX_SIZE = 2 * 1024 * 1024
+        /** Hello Haylou'nun LS05 sınırı (0x120000). */
+        const val MAX_SIZE = 1_179_648
 
         private fun u16(b: ByteArray, o: Int) = (b[o].toInt() and 0xFF) or ((b[o + 1].toInt() and 0xFF) shl 8)
         private fun u32(b: ByteArray, o: Int): Long =
@@ -111,7 +116,7 @@ class FaceFile private constructor(
                 return fail("Bu bir .tbwf (Hello Haylou tasarım) dosyası. Henüz desteklenmiyor; .bin kadranlar yüklenebilir.")
             }
             if (b.size < HEADER + ENTRY) return fail("Dosya çok küçük; kadran dosyası değil.")
-            if (b.size > MAX_SIZE) return fail("Dosya 2 MB'tan büyük.")
+            if (b.size > MAX_SIZE) return fail("Dosya ${MAX_SIZE / 1024} KB sınırından büyük.")
             val hsw = b[0] == 'H'.code.toByte() && b[1] == 'S'.code.toByte() && b[2] == 'W'.code.toByte()
             if (!hsw && u32(b, 4) != (b.size - HEADER).toLong()) return fail("Boy alanı tutmuyor; dosya eksik ya da farklı biçimde.")
             if (u32(b, 8) != crc(b)) return fail("Doğrulama toplamı (CRC) tutmuyor; dosya bozuk.")
@@ -127,10 +132,14 @@ class FaceFile private constructor(
                 val e = FaceElement(
                     type = type, width = u16(b, o + 2), offset = u32(b, o + 4), height = u16(b, o + 8),
                     x = u16(b, o + 10), y = u16(b, o + 12), frames = b[o + 16].toInt() and 0xFF,
+                    tail = b.copyOfRange(o + 21, o + 24),
                 )
                 val end = e.offset + e.width.toLong() * e.height * 2 * maxOf(e.frames, 1)
                 if (e.width == 0 || e.height == 0 || e.width > w || e.height > h || e.offset < TABLE || end > b.size) {
                     return fail("Öğe ${els.size + 1} dosya sınırlarının dışında.")
+                }
+                if (e.x + e.width > w || e.y + e.height > h) {
+                    return fail("Öğe ${els.size + 1} (tür ${e.type}) ekranın dışına taşıyor.")
                 }
                 els += e
                 o += ENTRY

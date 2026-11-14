@@ -2,7 +2,7 @@ name: APK derle
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, tbwf ]
   workflow_dispatch:
 
 permissions:
@@ -71,6 +71,7 @@ jobs:
           path: protocol/build/reports/tests/
 
       - name: Telefondan indirmek için Release yayınla
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
