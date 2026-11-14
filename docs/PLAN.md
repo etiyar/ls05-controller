@@ -340,3 +340,7 @@ Sıradaki karar (kapı 2): kayıttaki resmi dosyayı bizim uygulamadan birebir y
 - Test 1: FW Logo, FaceWriter ile yeniden yazılmış, kimlik 0xF0F0. Saat kabul etti.
 - Test 2: ibresiz dijital (tür 17, 10, 4, 5), FaceWriter çıktısı. Saat gerçek saati doğru gösterdi (13:19): 14 karelik "-,/0123456789:" sırası, hücre yerleşimi ve ibresiz kadran doğrulandı.
 - Sıradaki: aşama 1 .tbwf derlemesi (Mus ya da 1526); ortak sprite ve katman sırası ayrı denenecek.
+
+### v0.8.1 cihaz testi (14 Kasım 14:46): GEÇTİ
+- Hava durumu (Open-Meteo → `11 01/02/03`) saatte göründü. WMO → saat kodu eşlemesi kullanımda.
+- FW kadranlarında Türkçe gün adı ve yeni adım kutusu.
