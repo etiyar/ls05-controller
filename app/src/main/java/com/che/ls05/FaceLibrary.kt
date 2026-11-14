@@ -2,6 +2,7 @@ package com.che.ls05
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Handler
 import com.che.ls05.protocol.FaceFile
 import java.io.File
 
@@ -31,21 +32,74 @@ object FaceLibrary {
 
     fun get(c: Context, id: String): Entry? = list(c).firstOrNull { it.id == id }
 
-    /** Doğrular ve kopyalar. Aynı içerik zaten varsa onu döndürür. */
-    fun add(c: Context, bytes: ByteArray, name: String): Result<Entry> {
+    /** Ekleme sonucu: galeri girdisi ve (tbwf ise) çizilemeyen öğe uyarıları. */
+    class Added(val entry: Entry, val warnings: List<String>, val compiled: Boolean)
+
+    /**
+     * Doğrular ve kopyalar. .tbwf tasarım dosyası ise önce kadrana derlenir; derlenen dosya <id>.face,
+     * özgün dosya <id>.tbwf olarak saklanır. İş arka planda yapılır, sonuç ana iş parçacığında [done]'a gelir.
+     */
+    fun add(c: Context, bytes: ByteArray, name: String, done: (Result<Added>) -> Unit) {
+        val app = c.applicationContext
+        val main = Handler(app.mainLooper)
+        Thread({
+            val r = try {
+                if (TbwfCompiler.isTbwf(bytes)) addTbwf(app, bytes, name) else addBin(app, bytes, name)
+            } catch (e: Throwable) {
+                Result.failure(Exception("Kadran eklenemedi (${e.javaClass.simpleName})."))
+            }
+            main.post { done(r) }
+        }, "kadran-ekle").start()
+    }
+
+    private fun cleanName(name: String): String =
+        name.replace(Regex("\\s+"), " ").trim().take(MAX_NAME).ifEmpty { "Kadran" }
+
+    private fun addBin(c: Context, bytes: ByteArray, name: String): Result<Added> {
         FaceFile.parse(bytes).exceptionOrNull()?.let { return Result.failure(it) }
         list(c).firstOrNull { it.file.length() == bytes.size.toLong() && it.file.readBytes().contentEquals(bytes) }
-            ?.let { return Result.success(it) }
-        val id = System.currentTimeMillis().toString()
-        File(dir(c), "$id.face").writeBytes(bytes)
-        val clean = name.replace(Regex("\\s+"), " ").trim().take(MAX_NAME).ifEmpty { "Kadran" }
-        File(dir(c), "$id.name").writeText(clean)
-        return Result.success(Entry(id, clean, File(dir(c), "$id.face")))
+            ?.let { return Result.success(Added(it, emptyList(), false)) }
+        return Result.success(Added(store(c, bytes, null, cleanName(name)), emptyList(), false))
+    }
+
+    private fun addTbwf(c: Context, zip: ByteArray, name: String): Result<Added> {
+        list(c).firstOrNull { e ->
+            val t = File(dir(c), "${e.id}.tbwf")
+            t.exists() && t.length() == zip.size.toLong() && t.readBytes().contentEquals(zip)
+        }?.let { return Result.success(Added(it, emptyList(), true)) }
+        val out = TbwfCompiler(c).compile(zip, freeFaceId(c), name).getOrElse { return Result.failure(it) }
+        return Result.success(Added(store(c, out.bytes, zip, cleanName(out.name)), out.warnings, true))
+    }
+
+    private fun store(c: Context, face: ByteArray, tbwf: ByteArray?, name: String): Entry {
+        var id = System.currentTimeMillis()
+        while (File(dir(c), "$id.face").exists()) id++
+        File(dir(c), "$id.face").writeBytes(face)
+        if (tbwf != null) File(dir(c), "$id.tbwf").writeBytes(tbwf)
+        File(dir(c), "$id.name").writeText(name)
+        return Entry(id.toString(), name, File(dir(c), "$id.face"))
+    }
+
+    /** Derlenen kadranlar için galeride kullanılmayan kimlik (0xF000..0xFFFE). */
+    private fun freeFaceId(c: Context): Int {
+        val used = HashSet<Int>()
+        for (e in list(c)) {
+            try {
+                e.file.inputStream().use { s ->
+                    val b = ByteArray(2)
+                    if (s.read(b) == 2) used += (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        for (id in 0xF000..0xFFFE) if (id !in used) return id
+        return 0xF000
     }
 
     fun delete(c: Context, id: String) {
         File(dir(c), "$id.face").delete()
         File(dir(c), "$id.name").delete()
+        File(dir(c), "$id.tbwf").delete()
         previews.remove(id)
         if (Prefs.currentFace(c) == id) Prefs.setCurrentFace(c, "")
     }
