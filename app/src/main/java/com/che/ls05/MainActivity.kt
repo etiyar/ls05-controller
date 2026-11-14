@@ -413,6 +413,8 @@ class MainActivity : Activity(), WatchHub.Observer {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_FACE || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        // .tbwf tasarım dosyası açılınca 8 MB'a kadar çıkabilir; zip de bu sınıra kadar okunur.
+        val limit = TbwfCompiler.MAX_TOTAL
         val bytes = try {
             contentResolver.openInputStream(uri)?.use { input ->
                 val buf = java.io.ByteArrayOutputStream()
@@ -422,7 +424,7 @@ class MainActivity : Activity(), WatchHub.Observer {
                     val n = input.read(chunk)
                     if (n < 0) break
                     total += n
-                    if (total > com.che.ls05.protocol.FaceFile.MAX_SIZE) return@use null
+                    if (total > limit) return@use null
                     buf.write(chunk, 0, n)
                 }
                 buf.toByteArray()
@@ -430,7 +432,7 @@ class MainActivity : Activity(), WatchHub.Observer {
         } catch (e: Exception) {
             null
         }
-        if (bytes == null) {
+        if (bytes == null || (!TbwfCompiler.isTbwf(bytes) && bytes.size > com.che.ls05.protocol.FaceFile.MAX_SIZE)) {
             toast("Dosya okunamadı ya da ${com.che.ls05.protocol.FaceFile.MAX_SIZE / 1024} KB sınırından büyük.")
             return
         }
@@ -441,18 +443,47 @@ class MainActivity : Activity(), WatchHub.Observer {
             }
         } catch (_: Exception) {
         }
-        FaceLibrary.add(this, bytes, name)
-            .onSuccess {
-                toast("Eklendi: ${it.name}")
+        val tbwf = TbwfCompiler.isTbwf(bytes)
+        val progress = if (tbwf) showProgress("Tasarım kadrana dönüştürülüyor…") else null
+        FaceLibrary.add(this, bytes, name) { r ->
+            try { progress?.dismiss() } catch (_: Exception) { }
+            if (isFinishing || isDestroyed) return@add
+            r.onSuccess {
                 watch.refreshFaces()
-            }
-            .onFailure {
+                if (it.warnings.isEmpty()) {
+                    toast("Eklendi: ${it.entry.name}")
+                } else {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("Eklendi: ${it.entry.name}")
+                        .setMessage("Bazı öğeler çizilmedi:\n\n" + it.warnings.joinToString("\n") { w -> "• $w" })
+                        .setPositiveButton("Tamam", null)
+                        .show()
+                }
+            }.onFailure {
                 android.app.AlertDialog.Builder(this)
                     .setTitle("Kadran eklenemedi")
                     .setMessage(it.message ?: "Dosya kadran biçiminde değil.")
                     .setPositiveButton("Tamam", null)
                     .show()
             }
+        }
+    }
+
+    /** İptal edilemeyen bekleme penceresi. */
+    private fun showProgress(text: String): android.app.AlertDialog {
+        val pad = (20 * resources.displayMetrics.density).toInt()
+        val row = android.widget.LinearLayout(this)
+        row.orientation = android.widget.LinearLayout.HORIZONTAL
+        row.gravity = android.view.Gravity.CENTER_VERTICAL
+        row.setPadding(pad, pad, pad, pad)
+        row.addView(android.widget.ProgressBar(this))
+        val t = android.widget.TextView(this)
+        t.text = text
+        t.setPadding(pad, 0, 0, 0)
+        row.addView(t)
+        val d = android.app.AlertDialog.Builder(this).setView(row).setCancelable(false).create()
+        d.show()
+        return d
     }
 
     override fun onHealthChanged() {

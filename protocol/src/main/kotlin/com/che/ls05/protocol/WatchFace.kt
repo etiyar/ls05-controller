@@ -74,6 +74,27 @@ class FaceFile private constructor(
         return out
     }
 
+    /**
+     * Doğrulama önizlemesi: dosyadaki önizleme (10) yok sayılır, görüntü derlenmiş öğelerden kurulur
+     * (rakamlar örnek değerle, ibreler 10:08:36). 0x0000 saydam sayılır.
+     */
+    fun composedPreview(): IntArray {
+        val px = FaceCompose.compose(width, elements) { e, f -> pixelsTransparent(e, f) }
+        // Saydam kalan yerler siyah görünsün.
+        for (i in px.indices) px[i] = FaceCompose.over(0xFF000000.toInt(), px[i])
+        return px
+    }
+
+    /** Öğenin karesi; 0x0000 saydam (alfa 0), diğerleri opak. */
+    fun pixelsTransparent(e: FaceElement, frame: Int = 0): IntArray {
+        val o = (e.offset + frame.toLong() * e.width * e.height * 2).toInt()
+        val px = Rgb565.toArgb(bytes, o, e.width, e.height)
+        for (i in px.indices) {
+            if (bytes[o + i * 2].toInt() == 0 && bytes[o + i * 2 + 1].toInt() == 0) px[i] = 0
+        }
+        return px
+    }
+
     /** Tam ekran ibre resmini merkez etrafında döndürüp siyah olmayan pikselleri çizer (en yakın komşu). */
     private fun rotateOnto(out: IntArray, src: IntArray, degrees: Double) {
         val a = Math.toRadians(degrees)
@@ -113,7 +134,7 @@ class FaceFile private constructor(
         fun parse(b: ByteArray, screenW: Int = 240, screenH: Int = 240): Result<FaceFile> {
             fun fail(msg: String) = Result.failure<FaceFile>(IllegalArgumentException(msg))
             if (b.size >= 2 && b[0] == 'P'.code.toByte() && b[1] == 'K'.code.toByte()) {
-                return fail("Bu bir .tbwf (Hello Haylou tasarım) dosyası. Henüz desteklenmiyor; .bin kadranlar yüklenebilir.")
+                return fail("Bu bir zip dosyası; kadran dosyası ya da .tbwf tasarımı değil.")
             }
             if (b.size < HEADER + ENTRY) return fail("Dosya çok küçük; kadran dosyası değil.")
             if (b.size > MAX_SIZE) return fail("Dosya ${MAX_SIZE / 1024} KB sınırından büyük.")
