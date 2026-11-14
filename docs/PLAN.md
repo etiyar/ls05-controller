@@ -344,3 +344,17 @@ Sıradaki karar (kapı 2): kayıttaki resmi dosyayı bizim uygulamadan birebir y
 ### v0.8.1 cihaz testi (14 Kasım 14:46): GEÇTİ
 - Hava durumu (Open-Meteo → `11 01/02/03`) saatte göründü. WMO → saat kodu eşlemesi kullanımda.
 - FW kadranlarında Türkçe gün adı ve yeni adım kutusu.
+
+## v0.10: son görülen yer ve saatteki kadran
+
+Son görülen yer:
+- Ayarlar > Saat > "Son görülen yeri kaydet", varsayılan kapalı. Açılınca konum izni istenir (Android 12+ pencerede yaklaşık ya da kesin). Arka plan konum izni istenmez.
+- Beklenmeyen kopmada (`LinkAlert.arm` ile aynı an) konum alınır: API 30+ `getCurrentLocation` en çok 10 sn; gelmezse NETWORK/PASSIVE/GPS son konumlarından en yenisi, yalnızca son 5 dakikadaysa (`LastSeenRules.pick`).
+- Yalnızca son kayıt `Prefs`'te; zaman kopma anı. Loga konum yazılmaz. Ayar kapanınca kayıt silinir.
+- Uyarı bildiriminde "Son görülen: 14:32 (±40 m)" ve "Haritada aç" (`geo:` adresi). Önceki kopmadan kalan kayıt gösterilmez (`belongsTo`).
+- Servis türü `connectedDevice|location`. Location yalnızca ayar açık ve izin varken eklenir; eklenemezse (Android 14+ arka planda başlatma) connectedDevice ile devam edilir, uygulama öne gelince yeniden denenir. İzin sonradan verilince servis durdurulmaz, `startForeground` yeniden çağrılarak türe eklenir.
+
+Saatteki kadran (`1a 01`):
+- Aşama A: Ayarlar > Gelişmiş > "Kadranı sor (1a 01)". Yalnızca `1a 01` gider, yanıt loga yazılır (kimlik onaltılık, en/boy). Tek başına gönderim cihazda denenmedi; sonucu buraya yazılacak.
+- Aşama B: "Saatteki kadranı otomatik sor", varsayılan kapalı. Açıksa bağlanınca bir kez (8 sn sonra) ve kadran yüklemesi bitince sorulur; yükleme sürerken hiç sorulmaz. Yanıt `WatchHub.faceOnWatchId`; galerideki işaret `FaceMatch` ile: tek aday o, birden çok aday varsa yalnızca en son yüklenen aralarındaysa o; `ff ff ff ff` "Saatte yerleşik kadran"; eşleşme yoksa "Saatteki kadran galeride yok".
+- `tools/face_builder.py --id` (varsayılan 0xF100): her FW kadranı ayrı kimlik alır.

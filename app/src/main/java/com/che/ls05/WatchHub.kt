@@ -129,6 +129,18 @@ object WatchHub {
     val faceBusy: Boolean
         get() = facePhase != FaceUpload.Phase.IDLE && facePhase != FaceUpload.Phase.DONE && facePhase != FaceUpload.Phase.FAILED
 
+    /**
+     * Saatin 1a 01 ile bildirdiği kadran kimliği (ff ff ff ff = yerleşik); sorulmadıysa null.
+     * Yalnızca "Saatteki kadranı otomatik sor" açıkken dolar; galerideki "Saatte" işareti bundan çıkar.
+     */
+    var faceOnWatchId: Long? = null
+        private set
+
+    fun setFaceOnWatch(id: Long?) = onMain {
+        faceOnWatchId = id
+        observers.toList().forEach { it.onFaceChanged() }
+    }
+
     fun setFace(p: FaceUpload.Phase, percent: Int, text: String) = onMain {
         facePhase = p
         facePercent = percent

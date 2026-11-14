@@ -411,6 +411,7 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
     // Kadranlarım
     private val faceRow = LinearLayout(act).apply { orientation = LinearLayout.HORIZONTAL }
     private val faceStatus: TextView = ui.caption("")
+    private val faceNote: TextView = ui.caption("")
     private val faceThumbs = HashMap<String, FaceThumbView>()
 
     // Alarm notu var ama tam zamanlı alarm izni yoksa uyarı.
@@ -493,6 +494,9 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         faceStatus.visibility = View.GONE
         faceStatus.setPadding(ui.dp(16), 0, ui.dp(16), 0)
         ui.add(faces, faceStatus, topDp = 10)
+        faceNote.visibility = View.GONE
+        faceNote.setPadding(ui.dp(16), 0, ui.dp(16), 0)
+        ui.add(faces, faceNote, topDp = 10)
         ui.add(body, faces, topDp = 8)
 
         // Ekran ve profil
@@ -605,11 +609,28 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         return col
     }
 
-    /** Galeriyi yeniden kurar (ekleme, silme, yükleme sonrası). */
+    /**
+     * Saatteki kadran. "Saatteki kadranı otomatik sor" açık ve saat yanıt verdiyse saatin cevabından,
+     * değilse uygulamanın kaydından (en son yüklenen). İkinci değer kartta gösterilecek not.
+     */
+    private fun faceOnWatch(): Pair<String, String> {
+        val last = Prefs.currentFace(act)
+        val id = WatchHub.faceOnWatchId
+        if (!Prefs.autoFaceQuery(act) || id == null) return last to ""
+        return when (val m = com.che.ls05.protocol.FaceMatch.match(id, FaceLibrary.headerIds(act), last)) {
+            is com.che.ls05.protocol.FaceMatch.Result.OnWatch -> m.entry to ""
+            com.che.ls05.protocol.FaceMatch.Result.Builtin -> "" to "Saatte yerleşik kadran"
+            com.che.ls05.protocol.FaceMatch.Result.NotInGallery -> "" to "Saatteki kadran galeride yok"
+        }
+    }
+
+    /** Galeriyi yeniden kurar (ekleme, silme, yükleme sonrası, saatin yanıtı gelince). */
     fun refreshFaces() {
         faceRow.removeAllViews()
         faceThumbs.clear()
-        val current = Prefs.currentFace(act)
+        val (current, note) = faceOnWatch()
+        faceNote.text = note
+        faceNote.visibility = if (note.isEmpty()) View.GONE else View.VISIBLE
         for (e in FaceLibrary.list(act)) {
             val th = FaceThumbView(act)
             th.set(FaceLibrary.preview(e), e.id == current)
@@ -640,7 +661,7 @@ class WatchPage(act: MainActivity) : Page(act, "Saat") {
         box.gravity = Gravity.CENTER_HORIZONTAL
         box.setPadding(ui.dp(24), ui.dp(20), ui.dp(24), ui.dp(4))
         val big = FaceThumbView(act)
-        val onWatch = Prefs.currentFace(act) == e.id
+        val onWatch = faceOnWatch().first == e.id
         big.set(FaceLibrary.preview(e), onWatch)
         box.addView(big, LinearLayout.LayoutParams(ui.dp(200), ui.dp(200)))
         val name = ui.text(e.name, 18f, R.color.text, bold = true)
@@ -1310,6 +1331,10 @@ class NotifyPage(act: MainActivity) : Page(act, "Bildirimler") {
 
 class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
 
+    private companion object {
+        const val LAST_SEEN_INFO = "Bağlantı beklenmedik koparsa telefonun konumu kaydedilir. Yalnızca son kayıt tutulur."
+    }
+
     private val logShown = 300
     private var logCount = 0
 
@@ -1358,6 +1383,23 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
     private val lostQuiet: SwitchRow = ui.switchRow("Sessiz saatlerde uyarma", "", Prefs.lostQuiet(act)) {
         Prefs.setLostQuiet(act, it)
     }
+    // Son görülen yer
+    private val lastSeenSwitch: SwitchRow = ui.switchRow(
+        "Son görülen yeri kaydet",
+        LAST_SEEN_INFO,
+        Prefs.lastSeenEnabled(act),
+    ) { on -> toggleLastSeen(on) }
+    private val lastSeenBox: LinearLayout = ui.vertical()
+    private var lastSeenAsked = false
+    private var lastSeenDenied = false
+    private val autoFace: SwitchRow = ui.switchRow(
+        "Saatteki kadranı otomatik sor",
+        "Önce \"Kadranı sor\" ile elle dene. Saat sorunsuz yanıt verirse aç; galerideki işaret saatin cevabından gelir.",
+        Prefs.autoFaceQuery(act),
+    ) { on ->
+        Prefs.setAutoFaceQuery(act, on)
+        if (on) WatchHub.service?.queryFace(manual = false) else WatchHub.setFaceOnWatch(null)
+    }
     private val firmwareValue: TextView = ui.text("", 15f, R.color.text2)
     private val profileRow: NavRow = ui.navRow(R.drawable.ic_user, "Profil", "", null) { act.watch.editProfile() }
     private val actionButtons = ArrayList<Button>()
@@ -1393,6 +1435,9 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         ui.add(w, lostAlert.view)
         ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, lostQuiet.view)
+        ui.add(w, ui.divider(), height = ui.dp(1))
+        ui.add(w, lastSeenSwitch.view)
+        ui.add(w, lastSeenBox)
         ui.add(w, ui.divider(), height = ui.dp(1))
         ui.add(w, ui.row("Firmware", trailing = firmwareValue))
         ui.add(body, w, topDp = 8)
@@ -1457,6 +1502,9 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
         actionButtons += ui.secondary("Geçmişi oku") {
             withWatch { it.requestHistory(true) }
         }
+        actionButtons += ui.secondary("Kadranı sor (1a 01)") {
+            withWatch { act.toast(it.queryFace(manual = true) ?: "Sorgu gönderildi. Yanıt logda.") }
+        }
         var i = 0
         while (i < actionButtons.size) {
             val r = ui.horizontal()
@@ -1469,6 +1517,7 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
             ui.add(adv.content, r, topDp = if (i == 0) 0 else 8)
             i += 2
         }
+        ui.add(adv.content, autoFace.view, topDp = 12)
         ui.add(adv.content, ui.cardTitle("Log"), topDp = 20)
         val lr = ui.horizontal()
         ui.add(lr, ui.secondary("Logu kopyala") { copyLog() }, width = 0, weight = 1f)
@@ -1596,6 +1645,8 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
             "Saatin rahatsız etme saatleri kullanılır. Rahatsız etme şu an kapalı."
         }
         lostQuiet.subtitle.visibility = View.VISIBLE
+        refreshLastSeen()
+        autoFace.toggle.set(Prefs.autoFaceQuery(act))
         firmwareValue.text = WatchHub.firmware ?: "bilinmiyor"
         profileRow.subtitle.text =
             if (SettingsStore.profileDraft(act).personalComplete) "Boy, kilo, yaş ve cinsiyet girildi." else "Boy, kilo, yaş ve cinsiyet girilmedi."
@@ -1603,6 +1654,81 @@ class SettingsPage(act: MainActivity) : Page(act, "Ayarlar") {
 
     fun onReady(ready: Boolean) {
         actionButtons.forEach { ui.enable(it, ready) }
+    }
+
+    // ---------- Son görülen yer ----------
+
+    private fun toggleLastSeen(on: Boolean) {
+        lastSeenDenied = false
+        if (!on) {
+            Prefs.setLastSeenEnabled(act, false)
+            WatchHub.service?.refreshForegroundType()
+            refreshLastSeen()
+            return
+        }
+        if (LastSeen.hasPermission(act)) {
+            enableLastSeen()
+            return
+        }
+        // İzin gelene kadar anahtar kapalı kalır. Android 12+ pencerede yaklaşık ya da kesin seçilir.
+        lastSeenSwitch.toggle.set(false)
+        lastSeenAsked = true
+        val perms = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION)
+        } else {
+            arrayOf(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+        }
+        act.requestPermissions(perms, MainActivity.REQ_LOCATION)
+    }
+
+    private fun enableLastSeen() {
+        Prefs.setLastSeenEnabled(act, true)
+        val s = WatchHub.service
+        if (s != null) {
+            act.toast(if (s.refreshForegroundType()) "Servis konum için güncellendi." else "Servis konuma erişemedi; logu kontrol et.")
+        }
+        refreshLastSeen()
+    }
+
+    /** Konum izni penceresi kapandı. */
+    fun onLocationPermission(granted: Boolean) {
+        if (!lastSeenAsked) return
+        lastSeenAsked = false
+        if (granted) {
+            enableLastSeen()
+        } else {
+            lastSeenDenied = true
+            refreshLastSeen()
+        }
+    }
+
+    private fun refreshLastSeen() {
+        // İzin sonradan geri alındıysa ayar kapanır, kayıt silinir.
+        if (Prefs.lastSeenEnabled(act) && !LastSeen.hasPermission(act)) Prefs.setLastSeenEnabled(act, false)
+        val on = Prefs.lastSeenEnabled(act)
+        lastSeenSwitch.toggle.set(on)
+        ui.enable(lastSeenSwitch.view, true)
+        if (lastSeenDenied && !on) {
+            lastSeenSwitch.subtitle.text = "Konum izni verilmedi; kayıt kapalı. İzni uygulama ayarlarından da verebilirsin."
+            lastSeenSwitch.subtitle.setTextColor(ui.color(R.color.warning))
+        } else {
+            lastSeenSwitch.subtitle.text = LAST_SEEN_INFO
+            lastSeenSwitch.subtitle.setTextColor(ui.color(R.color.text2))
+        }
+        lastSeenBox.removeAllViews()
+        if (!on) return
+        val f = Prefs.lastSeen(act)
+        if (f == null) {
+            ui.add(lastSeenBox, ui.row("Henüz kayıt yok", "Bağlantı beklenmedik koparsa kaydedilir."))
+            return
+        }
+        val del = ui.textButton("Sil") {
+            Prefs.setLastSeen(act, null)
+            refreshLastSeen()
+        }
+        ui.add(lastSeenBox, ui.row(LastSeen.label(f), "${Fmt.dayMs(f.at)} · Haritada açmak için dokun", trailing = del) {
+            if (!LastSeen.openMap(act, f)) act.toast("Harita uygulaması bulunamadı.")
+        })
     }
 
     private fun withWatch(block: (WatchService) -> Unit) {

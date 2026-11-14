@@ -3,6 +3,7 @@ package com.che.ls05
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Handler
+import com.che.ls05.protocol.FaceConfig
 import com.che.ls05.protocol.FaceFile
 import java.io.File
 
@@ -80,18 +81,26 @@ object FaceLibrary {
         return Entry(id.toString(), name, File(dir(c), "$id.face"))
     }
 
+    /** Saatin 1a 01 yanıtında bildirdiği kimlik: dosyanın ilk 2 baytı (u16 LE). Okunamazsa null. */
+    fun headerId(e: Entry): Int? = try {
+        e.file.inputStream().use { s ->
+            val b = ByteArray(2)
+            if (s.read(b) == 2) FaceConfig.fileId(b) else null
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Galeri kaydı → dosya kimliği (kadran eşleme için). */
+    fun headerIds(c: Context): Map<String, Int> {
+        val out = LinkedHashMap<String, Int>()
+        for (e in list(c)) headerId(e)?.let { out[e.id] = it }
+        return out
+    }
+
     /** Derlenen kadranlar için galeride kullanılmayan kimlik (0xF000..0xFFFE). */
     private fun freeFaceId(c: Context): Int {
-        val used = HashSet<Int>()
-        for (e in list(c)) {
-            try {
-                e.file.inputStream().use { s ->
-                    val b = ByteArray(2)
-                    if (s.read(b) == 2) used += (b[0].toInt() and 0xFF) or ((b[1].toInt() and 0xFF) shl 8)
-                }
-            } catch (_: Exception) {
-            }
-        }
+        val used = HashSet<Int>(headerIds(c).values)
         for (id in 0xF000..0xFFFE) if (id !in used) return id
         return 0xF000
     }

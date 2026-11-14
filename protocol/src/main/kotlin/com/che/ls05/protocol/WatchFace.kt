@@ -172,13 +172,60 @@ class FaceFile private constructor(
     }
 }
 
-/** 1a 01 yanıtı: 1a 01 ff ff ff ff [en u16 BE] [boy u16 BE] 00 00 → ekran boyu. */
+/**
+ * 1a 01 yanıtı: 1a 01 [kimlik u32 BE] [en u16 BE] [boy u16 BE] 00 00 10 00 00.
+ * Kimlik ff ff ff ff ise saatte yerleşik kadran var; yüklenen kadranda dosya başlığının ilk 2 baytı (u16 LE).
+ * Örnek: resmi Haylou kadranı 5002 (0x138a) → yanıtta 00 00 13 8a.
+ */
 object FaceConfig {
-    fun screen(v: ByteArray): Pair<Int, Int>? {
+    const val BUILTIN = 0xFFFFFFFFL
+
+    class Reply(val id: Long, val width: Int, val height: Int) {
+        val builtin: Boolean get() = id == BUILTIN
+    }
+
+    fun parse(v: ByteArray): Reply? {
         if (v.size < 10 || v[0] != 0x1a.toByte() || v[1] != 0x01.toByte()) return null
+        var id = 0L
+        for (i in 2..5) id = (id shl 8) or (v[i].toLong() and 0xFF)
         val w = ((v[6].toInt() and 0xFF) shl 8) or (v[7].toInt() and 0xFF)
         val h = ((v[8].toInt() and 0xFF) shl 8) or (v[9].toInt() and 0xFF)
-        return w to h
+        return Reply(id, w, h)
+    }
+
+    fun screen(v: ByteArray): Pair<Int, Int>? = parse(v)?.let { it.width to it.height }
+
+    /** Kadran dosyasının saatin bildirdiği kimliği: ilk 2 bayt, küçük uçlu. */
+    fun fileId(head: ByteArray): Int? =
+        if (head.size < 2) null else (head[0].toInt() and 0xFF) or ((head[1].toInt() and 0xFF) shl 8)
+}
+
+/**
+ * Saatin bildirdiği kadranı galeriyle eşler.
+ * Birden çok dosya aynı kimliği taşıyabilir (ör. resmi dosyadan üretilen kadranlar 5002'yi korur).
+ * Tek aday varsa o; birden çoksa yalnızca en son yüklenen kayıt adaylardaysa o işaretlenir.
+ */
+object FaceMatch {
+    sealed class Result {
+        /** Galeride bu kayıt saatte. */
+        data class OnWatch(val entry: String) : Result()
+
+        /** Saatte yerleşik kadran (ff ff ff ff). */
+        object Builtin : Result()
+
+        /** Saatteki kadran galeride yok ya da hangisi olduğu belirsiz. */
+        object NotInGallery : Result()
+    }
+
+    /** [gallery]: galeri kaydı → dosya kimliği. [current]: en son yüklenen kayıt (boş olabilir). */
+    fun match(watchId: Long, gallery: Map<String, Int>, current: String): Result {
+        if (watchId == FaceConfig.BUILTIN) return Result.Builtin
+        val hits = gallery.filterValues { it.toLong() == watchId }.keys
+        return when {
+            hits.size == 1 -> Result.OnWatch(hits.first())
+            current in hits -> Result.OnWatch(current)
+            else -> Result.NotInGallery
+        }
     }
 }
 

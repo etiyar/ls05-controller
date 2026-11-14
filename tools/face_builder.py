@@ -6,8 +6,14 @@ Temel bir LS05 kadran dosyasını (ör. Haylou Analog) alır, yapısını aynen 
 yalnızca arka plan (17), önizleme (10) ve isteğe bağlı saniye ibresi (3) resimlerini değiştirir,
 CRC32'yi yeniden hesaplar. Temel dosya repoda yoktur (üreticiye ait).
 
-Kullanım: face_builder.py TEMEL.bin CIKTI_KLASORU
+Her kadrana ayrı kimlik verilir (dosyanın ilk 2 baytı, u16 LE; CRC'ye girmez). Saat bu kimliği
+1a 01 yanıtında bildirir; uygulama galerideki "Saatte" işaretini buna göre koyar. Kimlikler
+--id ile verilen değerden (varsayılan 0xF100) başlayıp birer artar. Uygulamanın derlediği .tbwf
+kadranları 0xF000-0xFFFE aralığında; çakışmasın diye 0xF100'den başlanır.
+
+Kullanım: face_builder.py [--id 0xF100] TEMEL.bin CIKTI_KLASORU
 """
+import argparse
 import math
 import struct
 import sys
@@ -214,8 +220,10 @@ def weekday_sprites(e, color=WHITE):
     return bytes(out)
 
 
-def build(base: bytes, bg: Image.Image, mint_second=True, turkish_days=True):
+def build(base: bytes, bg: Image.Image, mint_second=True, turkish_days=True, face_id=None):
     d = bytearray(base)
+    if face_id is not None:
+        struct.pack_into("<H", d, 0, face_id)
     els = elements(d)
     if turkish_days and 15 in els and els[15]["n"] == 7:
         e = els[15]
@@ -232,14 +240,31 @@ def build(base: bytes, bg: Image.Image, mint_second=True, turkish_days=True):
     return bytes(d), pv
 
 
+def face_id(text):
+    v = int(text, 0)
+    if not 1 <= v <= 0xFFFE:
+        raise argparse.ArgumentTypeError("kimlik 1..0xFFFE aralığında olmalı")
+    return v
+
+
 def main():
-    base = Path(sys.argv[1]).read_bytes()
+    ap = argparse.ArgumentParser(description="LS05 kadran üretici")
+    ap.add_argument("base", help="temel kadran dosyası (.bin)")
+    ap.add_argument("out", help="çıktı klasörü")
+    ap.add_argument("--id", type=face_id, default=0xF100,
+                    help="ilk kadranın kimliği, sonrakiler birer artar (varsayılan 0xF100)")
+    args = ap.parse_args()
+    base = Path(args.base).read_bytes()
     assert struct.unpack("<I", base[8:12])[0] == zlib.crc32(base[24:]) & 0xFFFFFFFF, "temel dosya CRC tutmuyor"
-    out = Path(sys.argv[2])
+    if args.id + len(DESIGNS) - 1 > 0xFFFE:
+        sys.exit("kimlik aralığı 0xFFFE'yi aşıyor")
+    out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     pvs = []
-    for name, fn in DESIGNS.items():
-        data, pv = build(base, fn())
+    for i, (name, fn) in enumerate(DESIGNS.items()):
+        fid = args.id + i
+        data, pv = build(base, fn(), face_id=fid)
+        print(f"{name}.bin: kimlik 0x{fid:04X}")
         (out / f"{name}.bin").write_bytes(data)
         pv.save(out / f"{name}.png")
         pvs.append((name, pv))

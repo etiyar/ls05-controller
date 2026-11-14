@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import com.che.ls05.protocol.DndSetting
+import com.che.ls05.protocol.LastSeenRules
 import com.che.ls05.protocol.LostLinkRules
 import java.time.Instant
 import java.time.LocalTime
@@ -27,13 +28,15 @@ import java.time.ZoneId
  * - Bluetooth kapalıysa hiçbir uyarı gösterilmez (kararın gerekçesi LostLinkRules.Decision.BLUETOOTH_OFF).
  * - Sessiz saatler ayrı saat seçimi istemez: saatin rahatsız etme penceresi kullanılır. Tek ayar kaynağı
  *   olduğu için iki pencere birbirinden kopamaz; rahatsız etme kapalıysa sessiz saat yoktur.
- * - Konum tutulmaz. Loga yalnızca saat:dakika yazılır.
+ * - "Son görülen yeri kaydet" açıksa kopma anındaki konum (LastSeen) bildirime eklenir: saat, doğruluk ve
+ *   "Haritada aç" eylemi. Konum loga yazılmaz; loga yalnızca saat:dakika yazılır.
  */
 object LinkAlert {
     private const val CHANNEL_ID = "watch_lost"
     private const val NOTIF_ID = 3
     private const val REQ_CHECK = 400
     private const val REQ_SNOOZE = 401
+    private const val REQ_MAP = 402
     const val ACTION_CHECK = "com.che.ls05.LOST_CHECK"
     const val ACTION_SNOOZE = "com.che.ls05.LOST_SNOOZE"
 
@@ -132,17 +135,28 @@ object LinkAlert {
             c, REQ_SNOOZE, Intent(c, LinkAlertReceiver::class.java).setAction(ACTION_SNOOZE),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val n = Notification.Builder(c, CHANNEL_ID)
+        val seen = Prefs.lastSeen(c)?.takeIf { Prefs.lastSeenEnabled(c) && LastSeenRules.belongsTo(it, since) }
+        val text = "Kopma: $time. Saat yakındaysa kendiliğinden bağlanır."
+        val full = if (seen == null) text else "$text\n${LastSeen.label(seen)}"
+        val b = Notification.Builder(c, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_warning)
             .setContentTitle("Saat bağlantısı koptu")
-            .setContentText("Kopma: $time. Saat yakındaysa kendiliğinden bağlanır.")
+            .setContentText(if (seen == null) text else LastSeen.label(seen))
+            .setStyle(Notification.BigTextStyle().bigText(full))
             .setWhen(since)
             .setShowWhen(true)
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null as Icon?, "1 saat sustur", snooze).build())
-            .build()
+        if (seen != null) {
+            val map = PendingIntent.getActivity(
+                c, REQ_MAP, LastSeen.mapIntent(seen),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            b.addAction(Notification.Action.Builder(null as Icon?, "Haritada aç", map).build())
+        }
+        val n = b.build()
         val nm = c.getSystemService(NotificationManager::class.java) ?: return
         if (!nm.areNotificationsEnabled()) {
             WatchHub.log("Saat bağlantısı $time itibarıyla kopuk, ama bildirim izni kapalı; uyarı gösterilemedi.")

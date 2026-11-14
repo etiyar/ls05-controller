@@ -67,6 +67,8 @@ class WatchService : Service(), Ls05Ble.Listener {
         private const val CALL_MAX_MS = 60_000L
         private const val NUDGE_MIN_INTERVAL_MS = 30_000L
         private const val MUSIC_STATE_DELAY_MS = 700L
+        private const val FACE_QUERY_AFTER_READY_MS = 8_000L
+        private const val FACE_QUERY_AFTER_UPLOAD_MS = 3_000L
 
         /** Başlatma isteği sisteme iletildiyse true. Arka plan kısıtı (Android 12+) gibi hatalarda false. */
         fun start(context: Context, action: String = ACTION_START, address: String? = null): Boolean {
@@ -165,6 +167,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         main.removeCallbacks(musicStateRunnable)
         main.removeCallbacks(weatherTick)
         main.removeCallbacks(historyTimeout)
+        cancelFaceQuery()
         historyGate.reset()
         LinkAlert.disarm(this, "servis kapandı")
         PhoneFinder.stop("servis kapandı")
@@ -229,6 +232,8 @@ class WatchService : Service(), Ls05Ble.Listener {
             if (face.phase == FaceUpload.Phase.DONE && WatchHub.faceId.isNotEmpty()) {
                 Prefs.setCurrentFace(this, WatchHub.faceId)
             }
+            // Yükleme bitti: saatteki kadran yeniden sorulur (ayar açıksa).
+            if (face.phase == FaceUpload.Phase.DONE) scheduleFaceQuery(FACE_QUERY_AFTER_UPLOAD_MS)
             // Yükleme bitti ya da durdu: bekleyen trafik şimdi gider.
             if (ble.isReady) {
                 flushPending()
@@ -240,8 +245,60 @@ class WatchService : Service(), Ls05Ble.Listener {
     /** Ayarlar ekranından çağrılır. Başlatılamazsa nedeni döner. */
     fun startFace(file: com.che.ls05.protocol.FaceFile, id: String): String? {
         if (face.active) return "Yükleme zaten sürüyor."
+        // Bekleyen kadran sorgusu varsa yanıtı yüklemenin kendi 1a 01 akışına bırakılır.
+        cancelFaceQuery()
         WatchHub.faceId = id
         return face.start(file)
+    }
+
+    // ---------- Saatteki kadran (1a 01) ----------
+
+    /** Bekleyen kadran sorgusu: 0 yok, 1 elle (yalnızca log), 2 otomatik (galeri işareti). */
+    private var faceQuery = 0
+    private val faceQueryTimeout = Runnable {
+        if (faceQuery != 0) WatchHub.log("Kadran sorgusuna ${FaceUpload.WAIT_MS / 1000} sn içinde yanıt gelmedi.")
+        faceQuery = 0
+    }
+    private val autoFaceQueryRunnable = Runnable { queryFace(manual = false) }
+
+    /**
+     * 1a 01 gönderir. Elle: Ayarlar > Gelişmiş düğmesi, yanıt yalnızca loga yazılır.
+     * Otomatik: "Saatteki kadranı otomatik sor" açıksa; yanıt galerideki "Saatte" işaretini belirler.
+     * Kadran yüklemesi sürerken hiç gönderilmez. Başlatılamazsa nedeni döner.
+     */
+    fun queryFace(manual: Boolean): String? {
+        if (!manual && !Prefs.autoFaceQuery(this)) return null
+        if (face.active) return "Kadran yükleniyor; sorgu gönderilmedi."
+        if (!ble.isReady) return "Saat hazır değil."
+        if (faceQuery != 0) return "Kadran sorgusu zaten bekliyor."
+        faceQuery = if (manual) 1 else 2
+        ble.sendCommand(com.che.ls05.protocol.FaceTransfer.QUERY, if (manual) "kadran sorgu (1a 01, elle)" else "kadran sorgu (1a 01)")
+        main.removeCallbacks(faceQueryTimeout)
+        main.postDelayed(faceQueryTimeout, FaceUpload.WAIT_MS)
+        return null
+    }
+
+    private fun cancelFaceQuery() {
+        faceQuery = 0
+        main.removeCallbacks(faceQueryTimeout)
+        main.removeCallbacks(autoFaceQueryRunnable)
+    }
+
+    /** Otomatik sorguyu biraz sonraya kurar (bağlanınca giden ilk trafik bitsin). */
+    private fun scheduleFaceQuery(delayMs: Long) {
+        main.removeCallbacks(autoFaceQueryRunnable)
+        if (Prefs.autoFaceQuery(this)) main.postDelayed(autoFaceQueryRunnable, delayMs)
+    }
+
+    /** Ham paket bekleyen kadran sorgusunun yanıtı mı. Yanıtsa işlenir. */
+    private fun handleFaceReply(v: ByteArray) {
+        if (faceQuery == 0 || face.active) return
+        val r = com.che.ls05.protocol.FaceConfig.parse(v) ?: return
+        val manual = faceQuery == 1
+        cancelFaceQuery()
+        val id = if (r.builtin) "ff ff ff ff (yerleşik)" else "0x%08X (%d)".format(r.id, r.id)
+        WatchHub.log("Kadran yanıtı: kimlik $id, ekran ${r.width}x${r.height}, ${v.size} bayt.")
+        if (!manual) WatchHub.setFaceOnWatch(r.id)
     }
 
     private fun resetAuth() {
@@ -540,6 +597,7 @@ class WatchService : Service(), Ls05Ble.Listener {
         WatchHub.deviceFound(device, name, rssi)
 
     override fun onRawFrame(value: ByteArray) {
+        handleFaceReply(value)
         face.onRaw(value)
         if (HealthStore.add(this, value)) WatchHub.healthChanged()
     }
@@ -588,6 +646,8 @@ class WatchService : Service(), Ls05Ble.Listener {
         if (System.currentTimeMillis() - Prefs.lastSync(this) > HISTORY_STALE_MS) requestHistory(true)
         WeatherSync.refresh(this, force = false)
         scheduleWeather()
+        // Bağlantı başına bir kez, ilk trafik bittikten sonra (ayar açıksa).
+        scheduleFaceQuery(FACE_QUERY_AFTER_READY_MS)
     }
 
     private val weatherTick = Runnable { WeatherSync.refresh(this, force = false); scheduleWeather() }
@@ -600,6 +660,7 @@ class WatchService : Service(), Ls05Ble.Listener {
 
     override fun onDisconnected(userInitiated: Boolean, status: Int) {
         face.onDisconnected()
+        cancelFaceQuery()
         val hadLink = wasReady
         wasReady = false
         // Yarım kalan geçmiş okuması sayılmaz; yeniden bağlanınca hemen okunabilir.
@@ -624,7 +685,10 @@ class WatchService : Service(), Ls05Ble.Listener {
             return
         }
         // Beklenmeyen kopma: ayar açıksa 60 sn sonra denetlenir; saat bu arada dönerse uyarı kalkar.
-        if (hadLink) LinkAlert.arm(this)
+        if (hadLink) {
+            LinkAlert.arm(this)
+            LastSeen.capture(this)
+        }
         scheduleReconnect()
     }
 
@@ -688,10 +752,30 @@ class WatchService : Service(), Ls05Ble.Listener {
             .build()
     }
 
+    /** Ön plan türüne "location" eklendi mi (son görülen yer için). */
+    var locationType = false
+        private set
+
+    /**
+     * Tür: connectedDevice; "son görülen yer" açık ve konum izni o an verilmişse location da eklenir.
+     * İzinsiz eklenirse servis SecurityException ile çöker. Android 14+ arka planda başlatılan serviste
+     * location türüne izin vermeyebilir; o zaman yalnızca connectedDevice ile devam edilir.
+     */
     private fun goForeground(): Boolean = try {
         val n = buildNotification(WatchHub.status)
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            val base = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            var withLocation = LastSeen.active(this)
+            if (withLocation) {
+                try {
+                    startForeground(NOTIF_ID, n, base or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+                } catch (e: Exception) {
+                    WatchHub.log("Servis türüne konum eklenemedi (${e.javaClass.simpleName}); uygulama açılınca yeniden denenecek.")
+                    withLocation = false
+                }
+            }
+            if (!withLocation) startForeground(NOTIF_ID, n, base)
+            locationType = withLocation
         } else {
             startForeground(NOTIF_ID, n)
         }
@@ -700,6 +784,20 @@ class WatchService : Service(), Ls05Ble.Listener {
         WatchHub.log("Ön plan servisi başlatılamadı: ${e.javaClass.simpleName}. Bluetooth iznini kontrol et.")
         stopSelf()
         false
+    }
+
+    /**
+     * Konum izni ya da "son görülen yer" ayarı değişti, veya uygulama öne geldi: ön plan türü yeniden kurulur.
+     * Servis durmaz, bağlantı kopmaz. Türe konum eklendiyse true.
+     */
+    fun refreshForegroundType(): Boolean {
+        if (stopping) return locationType
+        val before = locationType
+        goForeground()
+        if (locationType != before) {
+            WatchHub.log(if (locationType) "Servis türüne konum eklendi." else "Servis türünden konum kaldırıldı.")
+        }
+        return locationType
     }
 
     private fun updateStatus(text: String) {

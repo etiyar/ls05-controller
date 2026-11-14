@@ -3,6 +3,8 @@ package com.che.ls05
 import android.content.Context
 import android.content.SharedPreferences
 import com.che.ls05.protocol.AppTypeMap
+import com.che.ls05.protocol.LastSeenRules
+import com.che.ls05.protocol.SeenFix
 import com.che.ls05.protocol.UteCommand
 
 /** Telefonda saklanan ayarlar. Kimlik yalnızca burada tutulur; depoya ve loga girmez. */
@@ -109,7 +111,7 @@ object Prefs {
     fun foldTurkish(c: Context): Boolean = p(c).getBoolean("foldTurkish", false)
     fun setFoldTurkish(c: Context, value: Boolean) = p(c).edit().putBoolean("foldTurkish", value).apply()
 
-    // "Saat uzaklaştı" uyarısı. Konum tutulmaz; yalnızca kopma zamanı ve ayarlar.
+    // "Saat uzaklaştı" uyarısı: kopma zamanı ve ayarlar. Konum yalnızca "son görülen yer" açıksa (aşağıda).
     fun lostAlert(c: Context): Boolean = p(c).getBoolean("lostAlert", false)
     fun setLostAlert(c: Context, value: Boolean) = p(c).edit().putBoolean("lostAlert", value).apply()
 
@@ -124,6 +126,21 @@ object Prefs {
     /** Bekleyen kopmanın zamanı (ms); 0 = bekleyen yok. */
     fun lostSince(c: Context): Long = p(c).getLong("lostSince", 0L)
     fun setLostSince(c: Context, at: Long) = p(c).edit().putLong("lostSince", at).apply()
+
+    // Son görülen yer: yalnızca son kayıt tutulur, geçmiş yok, loga yazılmaz.
+    fun lastSeenEnabled(c: Context): Boolean = p(c).getBoolean("lastSeenOn", false)
+    fun setLastSeenEnabled(c: Context, value: Boolean) {
+        val e = p(c).edit().putBoolean("lastSeenOn", value)
+        if (!value) e.remove("lastSeen")
+        e.apply()
+    }
+    fun lastSeen(c: Context): SeenFix? = LastSeenRules.decode(p(c).getString("lastSeen", null))
+    fun setLastSeen(c: Context, f: SeenFix?) =
+        if (f == null) p(c).edit().remove("lastSeen").apply() else p(c).edit().putString("lastSeen", LastSeenRules.encode(f)).apply()
+
+    /** Bağlanınca saatteki kadranı 1a 01 ile sor (varsayılan kapalı; elle deneme başarılı olunca açılır). */
+    fun autoFaceQuery(c: Context): Boolean = p(c).getBoolean("autoFaceQuery", false)
+    fun setAutoFaceQuery(c: Context, value: Boolean) = p(c).edit().putBoolean("autoFaceQuery", value).apply()
 
     // Alarm ve rahatsız etme ayarları SettingsStore'a taşındı. Eski "alarm1".."alarm3" ve "dnd"
     // metinleri aynı dosyada kalır; SettingsStore ilk açılışta bunları okur.
