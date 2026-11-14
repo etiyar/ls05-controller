@@ -40,6 +40,8 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     companion object {
         private const val KEY_TAB = "tab"
+        /** Konum izni isteği (son görülen yer). 1: Bluetooth, 2: bildirim, 3: arama. */
+        const val REQ_LOCATION = 4
         private const val REQ_FACE = 41
     }
 
@@ -128,6 +130,8 @@ class MainActivity : Activity(), WatchHub.Observer {
         if (WatchHub.service == null && Prefs.serviceEnabled(this) && Prefs.address(this) != null && hasBlePermissions()) {
             WatchService.start(this)
         }
+        // Servis arka planda başladıysa konum türü eklenememiş olabilir; uygulama öndeyken yeniden kurulur.
+        if (LastSeen.active(this)) WatchHub.service?.refreshForegroundType()
         refreshAll()
     }
 
@@ -177,6 +181,7 @@ class MainActivity : Activity(), WatchHub.Observer {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_LOCATION) settings.onLocationPermission(grantResults.any { it == PackageManager.PERMISSION_GRANTED })
         refreshAll()
     }
 
@@ -391,8 +396,7 @@ class MainActivity : Activity(), WatchHub.Observer {
     override fun onFaceChanged() {
         if (WatchHub.faceBusy) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val p = WatchHub.facePhase
-        if (p == FaceUpload.Phase.DONE || p == FaceUpload.Phase.FAILED) watch.refreshFaces() else watch.refreshFaceProgress()
+        if (WatchHub.faceBusy) watch.refreshFaceProgress() else watch.refreshFaces()
     }
 
     // ---------- Kadran dosyası seçme ----------
