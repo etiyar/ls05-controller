@@ -13,6 +13,8 @@ import android.graphics.Rect
 import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Build
+import com.che.ls05.protocol.ArtFrames
+import com.che.ls05.protocol.BuiltinIcons
 import com.che.ls05.protocol.CellLayout
 import com.che.ls05.protocol.FaceCompose
 import com.che.ls05.protocol.FaceElement
@@ -23,8 +25,10 @@ import com.che.ls05.protocol.FaceWriter
 import com.che.ls05.protocol.GlyphBox
 import com.che.ls05.protocol.HandGeometry
 import com.che.ls05.protocol.Rgb565Encode
+import com.che.ls05.protocol.TbwfIcons
 import com.che.ls05.protocol.TbwfSpec
 import com.che.ls05.protocol.TbwfSpec.Kind
+import com.che.ls05.protocol.placeInCell
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -35,8 +39,9 @@ import java.util.zip.ZipInputStream
 import kotlin.math.ceil
 
 /**
- * .tbwf (Hello Haylou tasarım dosyası) → saat kadranı. Aşama 1: arka plan, rakam alanları, gün adı,
- * zip içindeki ibre resimleri, ayırıcılar ve sabit resimler. Desteklenmeyen öğeler uyarı listesine yazılır.
+ * .tbwf (Hello Haylou tasarım dosyası) → saat kadranı: arka plan, rakam alanları, gün adı, ibreler,
+ * ayırıcılar, durum simgeleri (zip içi resimler ya da yerleşik simgelerin kendi çizimlerimiz) ve sabit simgeler.
+ * Çizilemeyen öğeler uyarı listesine yazılır.
  * Ana iş parçacığında çağrılmamalı.
  */
 class TbwfCompiler(private val ctx: Context, locale: Locale = FaceTexts.defaultLocale()) {
@@ -199,13 +204,15 @@ class TbwfCompiler(private val ctx: Context, locale: Locale = FaceTexts.defaultL
                 Kind.NUMBER -> renderNumber(item)?.let { r ->
                     add(item.spec.type, r.w, r.h, r.x, r.y, r.frames, r.cells, label, bg = bgUnder(r.x, r.y, r.w, r.h))
                 }
-                Kind.DAY_OF_WEEK -> renderDay(item)?.let { r ->
+                Kind.DAY_OF_WEEK -> (if (item.json.has("font")) renderDay(item) else renderIcon(item))?.let { r ->
                     add(item.spec.type, r.w, r.h, r.x, r.y, r.frames, 1, label, bg = bgUnder(r.x, r.y, r.w, r.h))
                 }
                 Kind.HAND -> renderHand(item)?.let { (px, tail) ->
                     add(item.spec.type, S, S, 0, 0, listOf(px), 1, label, tail, bg = bgUnder(0, 0, S, S))
                 }
-                Kind.ICON -> warnings += "$label çizilmedi (aşama 2)."
+                Kind.ICON -> renderIcon(item)?.let { r ->
+                    add(item.spec.type, r.w, r.h, r.x, r.y, r.frames, 1, label, bg = bgUnder(r.x, r.y, r.w, r.h))
+                }
                 else -> {}
             }
         }
@@ -523,18 +530,98 @@ class TbwfCompiler(private val ctx: Context, locale: Locale = FaceTexts.defaultL
         dial.restore()
     }
 
-    /** Sabit simge: zip içindeki resim (uzun kenar 240*size) arka plana; yerleşik simge aşama 3. */
+    /** Sabit simge (uzun kenar 240*size) arka plana: zip içindeki resim olduğu gibi, yerleşik simge renklendirilerek. */
     private fun drawStaticImage(dial: Canvas, item: Item) {
-        val img = item.json.optJSONObject("resourceImage")
-        if (img == null) {
-            warnings += "${item.spec.label} çizilmedi (yerleşik simge, aşama 3)."
-            return
-        }
-        val bmp = png(img.optString("resource"), item.spec.label) ?: return
-        val sz = CellLayout.imageSize(bmp.width, bmp.height, img.optDouble("size", 0.1))
         val x = TbwfSpec.screenX(item.json.optDouble("x", 0.0), 0, 0, 0)
         val y = TbwfSpec.screenY(item.json.optDouble("y", 0.0))
-        dial.drawBitmap(bmp, null, Rect(x, y, x + sz[0], y + sz[1]), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        val img = item.json.optJSONObject("resourceImage")
+        if (img != null) {
+            val bmp = png(img.optString("resource"), item.spec.label) ?: return
+            val sz = CellLayout.imageSize(bmp.width, bmp.height, img.optDouble("size", 0.1))
+            dial.drawBitmap(bmp, null, Rect(x, y, x + sz[0], y + sz[1]), Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+            return
+        }
+        val ic = item.json.optJSONObject("resourceIcon")
+        val f = ic?.let { builtinFrames(item, it) }?.firstOrNull()
+        if (f == null) {
+            if (ic == null) warnings += "${item.spec.label}: resim yok, çizilmedi."
+            return
+        }
+        dial.drawBitmap(Bitmap.createBitmap(f.px, f.w, f.h, Bitmap.Config.ARGB_8888), x.toFloat(), y.toFloat(),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+    }
+
+    // ---------- Durum simgeleri ----------
+
+    private class Frame(val w: Int, val h: Int, val px: IntArray)
+
+    /** Yerleşik simgenin kendi çizimimiz: kareler (eşlenmeden), boy ve renk Hello Haylou kuralıyla. Tanınmazsa null. */
+    private fun builtinFrames(item: Item, ic: JSONObject): List<Frame>? {
+        val name = TbwfIcons.builtinName(item.name, ic.optString("resource"))
+        val icon = BuiltinIcons.get(name)
+        if (icon == null) {
+            warnings += "${item.spec.label}: '$name' yerleşik simgesi tanınmadı, çizilmedi."
+            return null
+        }
+        val col = colors(item.json)
+        val sz = TbwfIcons.frameSize(icon.w, icon.h, ic.optDouble("size", 0.1))
+        if (sz[0] <= 0 || sz[1] <= 0) {
+            warnings += "${item.spec.label}: boyu sıfır, çizilmedi."
+            return null
+        }
+        return icon.frames.map { Frame(sz[0], sz[1], ArtFrames.draw(it, sz[0], sz[1], col.gradient, col.colors, col.positions)) }
+    }
+
+    /** Zip içindeki klasörden kareler (adlara göre sıralı; resimler olduğu gibi). */
+    private fun folderFrames(item: Item, img: JSONObject): List<Frame>? {
+        val label = item.spec.label
+        val res = img.optString("resource").trim().trimStart('/')
+        val dir = if (res.endsWith("/")) res else "$res/"
+        val names = files.keys.filter { it.startsWith(dir) && it.endsWith(".png", true) && !it.substring(dir.length).contains('/') }
+            .map { it.substring(dir.length, it.length - 4) }
+        if (names.isEmpty()) {
+            warnings += "$label: resim klasörü boş ya da yok, çizilmedi."
+            return null
+        }
+        val order = TbwfIcons.folderOrder(item.name, names)
+        if (order == null) {
+            warnings += "$label: klasördeki resim adları tanınmadı, çizilmedi."
+            return null
+        }
+        val size = img.optDouble("size", 0.1)
+        val out = ArrayList<Frame>()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        for (n in order) {
+            val bmp = png("$dir$n.png", label) ?: return null
+            val sz = CellLayout.imageSize(bmp.width, bmp.height, size)
+            if (sz[0] <= 0 || sz[1] <= 0) return null
+            val b = Bitmap.createBitmap(sz[0], sz[1], Bitmap.Config.ARGB_8888)
+            Canvas(b).drawBitmap(bmp, null, Rect(0, 0, sz[0], sz[1]), paint)
+            out += Frame(sz[0], sz[1], IntArray(sz[0] * sz[1]).also { b.getPixels(it, 0, sz[0], 0, 0, sz[0], sz[1]) })
+        }
+        return out
+    }
+
+    /** Kareli simge (pil, bağlantı, hava, hedef, resimli gün adı): kaynak kareler → eşleme → ortak hücre. */
+    private fun renderIcon(item: Item): Cells? {
+        val label = item.spec.label
+        val img = item.json.optJSONObject("resourceImage")
+        val ic = item.json.optJSONObject("resourceIcon")
+        val src = when {
+            img != null -> folderFrames(item, img)
+            ic != null -> builtinFrames(item, ic)
+            else -> { warnings += "$label: resim yok, çizilmedi."; null }
+        } ?: return null
+        val map = TbwfIcons.remap(item.name, src.size)
+        if (map == null) {
+            warnings += "$label: ${src.size} resim var, saat ${item.spec.frames} kare istiyor; çizilmedi."
+            return null
+        }
+        val frames = map.map { src[it] }
+        val cell = TbwfIcons.cell(frames.map { intArrayOf(it.w, it.h) })
+        val x = TbwfSpec.screenX(item.json.optDouble("x", 0.0), 0, 0, 0)
+        val y = TbwfSpec.screenY(item.json.optDouble("y", 0.0))
+        return Cells(x, y, cell[0], cell[1], frames.map { placeInCell(it.px, it.w, it.h, cell[0], cell[1]) }, 1)
     }
 
     // ---------- Gün adı ----------
@@ -575,20 +662,44 @@ class TbwfCompiler(private val ctx: Context, locale: Locale = FaceTexts.defaultL
     // ---------- İbreler ----------
 
     private fun renderHand(item: Item): Pair<IntArray, ByteArray>? {
+        val label = item.spec.label
+        val props = item.json.optInt("properties", 0)
         val img = item.json.optJSONObject("resourceImage")
-        if (img == null) {
-            warnings += "${item.spec.label} çizilmedi (yerleşik ibre, aşama 3)."
+        val ic = item.json.optJSONObject("resourceIcon")
+        val hand: Bitmap
+        val w: Int
+        val h: Int
+        val pivotY: Double
+        if (img != null) {
+            val bmp = png(img.optString("resource"), label) ?: return null
+            val sz = CellLayout.imageSize(bmp.width, bmp.height, img.optDouble("size", 0.3))
+            w = sz[0]; h = sz[1]; hand = bmp
+            pivotY = img.optDouble("pivotY", 0.0)
+        } else if (ic != null) {
+            val f = builtinFrames(item, ic)?.firstOrNull() ?: return null
+            w = f.w; h = f.h
+            hand = Bitmap.createBitmap(f.px, f.w, f.h, Bitmap.Config.ARGB_8888)
+            pivotY = ic.optDouble("pivotY", 0.0)
+        } else {
+            warnings += "$label: resim yok, çizilmedi."
             return null
         }
-        val bmp = png(img.optString("resource"), item.spec.label) ?: return null
-        val props = item.json.optInt("properties", 0)
-        val sz = CellLayout.imageSize(bmp.width, bmp.height, img.optDouble("size", 0.3))
-        val pivot = HandGeometry.pivot(props, img.optDouble("pivotY", 0.0))
-        if ((props and 4) != 0) warnings += "${item.spec.label}: orta göbek çizilmedi (yerleşik simge, aşama 3)."
-        val box = HandGeometry.box(sz[0], sz[1], pivot)
+        if (w <= 0 || h <= 0) return null
+        val pivot = HandGeometry.pivot(props, pivotY)
+        val hub = if ((props and 4) != 0) HandGeometry.hubSize(item.spec.type, w) else 0
+        val box = HandGeometry.box(w, h, pivot, hub)
         val out = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888)
-        Canvas(out).drawBitmap(bmp, null, Rect(box.left, box.top, box.right, box.bottom),
-            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
+        val c = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        c.drawBitmap(hand, null, Rect(box.left, box.top, box.right, box.bottom), paint)
+        if (hub > 0) {
+            // Orta göbek (yerleşik ic_wf_hand_axis_fill karşılığı): geçişte son renk, düz renkte ilk renk.
+            val col = colors(item.json)
+            val axis = BuiltinIcons.get("ic_wf_hand_axis_fill")!!.frames[0]
+            val px = ArtFrames.draw(axis, hub, hub, "solid", intArrayOf(TbwfIcons.hubColor(col.gradient, col.colors)), null)
+            val l = Math.round((S - hub) / 2f)
+            c.drawBitmap(Bitmap.createBitmap(px, hub, hub, Bitmap.Config.ARGB_8888), l.toFloat(), l.toFloat(), paint)
+        }
         val px = IntArray(S * S)
         out.getPixels(px, 0, S, 0, 0, S, S)
         return px to box.tail

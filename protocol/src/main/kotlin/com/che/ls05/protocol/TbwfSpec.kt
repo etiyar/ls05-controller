@@ -38,7 +38,7 @@ object TbwfSpec {
         SIGN,
         /** Sabit simge (adım, kalori, mesafe, nabız); arka plana çizilir. */
         STATIC_ICON,
-        /** Durum simgesi (pil, bağlantı, hava, hedef); aşama 2. */
+        /** Durum simgesi (pil, bağlantı, hava, hedef); kareli öğe. */
         ICON,
     }
 
@@ -326,6 +326,9 @@ object HandGeometry {
         else -> 1.0
     }
 
+    /** Göbek boyu (piksel): round(ibre eni * oran). */
+    fun hubSize(type: Int, handWidth: Int): Int = Math.round(handWidth * hubRatio(type)).toInt()
+
     /** Pivot kaydırması (piksel): yalnızca properties tam olarak 2 ya da 4 ise 240*pivotY. */
     fun pivot(properties: Int, pivotY: Double): Double =
         if (properties == 2 || properties == 4) TbwfSpec.SCREEN * pivotY else 0.0
@@ -497,6 +500,9 @@ object FaceCompose {
                 continue
             }
             val idx = when {
+                // Hello Haylou önizlemesi: hava güneşli, bağlantı bağlı.
+                e.type == 20 && e.frames == 16 -> 1
+                e.frames == 2 -> 0
                 e.frames == 7 -> 4
                 e.frames >= 13 -> 3 + (sample++ * 3 + 1) % 10
                 e.frames > 1 -> e.frames / 2
